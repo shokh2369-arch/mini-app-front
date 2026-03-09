@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="uz">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
-  <title>Trip Map</title>
+  <title>Reja xaritasi</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <style>
     * { box-sizing: border-box; }
@@ -18,20 +18,21 @@
     #controls {
       position: absolute; left: 0; right: 0; bottom: 0;
       min-height: 72px;
-      padding: 12px 16px;
-      padding-bottom: max(12px, env(safe-area-inset-bottom));
-      display: flex; align-items: center; justify-content: center; gap: 12px;
+      padding: 10px 12px;
+      padding-bottom: max(10px, env(safe-area-inset-bottom));
+      display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+      flex-wrap: wrap;
       background: #fff; border-top: 1px solid #e2e8f0;
       box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
     }
     #status {
-      flex: 1; font-size: 15px; color: #475569; line-height: 1.4;
-      min-width: 0; padding-right: 8px;
+      flex: 1; min-width: 120px; font-size: 14px; color: #475569; line-height: 1.35;
+      padding-right: 8px;
     }
     #controls button {
       flex-shrink: 0;
-      min-height: 48px; min-width: 120px;
-      padding: 14px 20px; font-size: 16px; border: none; border-radius: 12px;
+      min-height: 44px; min-width: 0;
+      padding: 12px 16px; font-size: 15px; border: none; border-radius: 12px;
       background: #2563eb; color: #fff; font-weight: 600; cursor: pointer;
       box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
       transition: transform 0.15s, box-shadow 0.15s;
@@ -58,6 +59,7 @@
       filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25));
     }
     .driver-marker { font-size: 28px !important; }
+    .client-marker { z-index: 602 !important; }
     .client-marker svg { display: block; }
     #missing-params {
       display: none;
@@ -73,17 +75,17 @@
 </head>
 <body>
   <div id="missing-params" aria-live="polite">
-    <h2>Open with trip and driver</h2>
-    <p>This page must be opened with <code>trip_id</code> and <code>driver_id</code> in the URL.</p>
-    <p>Example: <code>?trip_id=123&driver_id=456</code></p>
+    <h2>Reja va haydovchi bilan oching</h2>
+    <p>Bu sahifa URLda <code>trip_id</code> va <code>driver_id</code> bilan ochilishi kerak.</p>
+    <p>Misol: <code>?trip_id=123&driver_id=456</code></p>
   </div>
   <div id="map"></div>
   <div id="controls">
-    <span id="status">Loading…</span>
+    <span id="status">Yuklanmoqda…</span>
     <div class="controls-buttons">
-      <button id="btnTrackToClient" type="button" class="track" style="display:none;">Track way to client</button>
-      <button id="btnStart" type="button" style="display:none;">START TRIP</button>
-      <button id="btnFinish" type="button" class="finish" style="display:none;">FINISH TRIP</button>
+      <button id="btnTrackToClient" type="button" class="track" style="display:none;">Mijozga yo'l</button>
+      <button id="btnStart" type="button" style="display:none;">SAFARNI BOSHLASH</button>
+      <button id="btnFinish" type="button" class="finish" style="display:none;">SAFARNI TUGATISH</button>
     </div>
   </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>

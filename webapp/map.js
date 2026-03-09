@@ -5,6 +5,8 @@
   var tripId, driverId;
   var tripStatus = '';
   var pickupLat, pickupLng;
+  var lastDriverLat, lastDriverLng;
+  var followDriverMode = false;
   var locationWatchId = null;
   var refreshIntervalId = null;
   // Replace with your Go backend URL when deploying (e.g. https://your-api.railway.app). No trailing slash.
@@ -121,14 +123,14 @@
         iconSize: [28, 36],
         iconAnchor: [14, 36]
       })
-    }).addTo(map).bindPopup('Client / Pickup');
+    }).addTo(map).bindPopup('Mijoz / Olib ketish joyi');
   }
 
   function addDriverMarker(lat, lng) {
     if (driverMarker) map.removeLayer(driverMarker);
     driverMarker = L.marker([lat, lng], {
       icon: L.divIcon({ className: 'driver-marker', html: '&#128663;', iconSize: [32, 32], iconAnchor: [16, 32] })
-    }).addTo(map).bindPopup('Driver');
+    }).addTo(map).bindPopup('Haydovchi');
   }
 
   function drawRoute(geojsonCoords) {
@@ -145,25 +147,63 @@
     map.fitBounds(routeLayer.getBounds(), { padding: [50, 50], maxZoom: 15 });
   }
 
+  function parseCoords(value) {
+    if (!value) return null;
+    if (Array.isArray(value) && value.length >= 2) {
+      var lat = parseFloat(value[0]);
+      var lng = parseFloat(value[1]);
+      if (!isNaN(lat) && !isNaN(lng)) return [lat, lng];
+    }
+    if (typeof value === 'object' && value !== null) {
+      var la = value.lat != null ? value.lat : value.latitude;
+      var ln = (value.lng != null ? value.lng : value.longitude != null ? value.longitude : value.lon);
+      if (la != null && ln != null) {
+        la = parseFloat(la);
+        ln = parseFloat(ln);
+        if (!isNaN(la) && !isNaN(ln)) return [la, ln];
+      }
+    }
+    return null;
+  }
+
+  function fitMapToMarkers() {
+    var bounds = [];
+    if (pickupMarker) bounds.push(pickupMarker.getLatLng());
+    if (driverMarker) bounds.push(driverMarker.getLatLng());
+    if (bounds.length >= 2) {
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
+    } else if (bounds.length === 1) {
+      map.setView(bounds[0], 14);
+    }
+  }
+
   function updateFromTrip(data) {
     tripStatus = data.status || '';
-    var pickup = data.pickup;
-    var driver = data.driver;
-    if (pickup && pickup.length >= 2) {
+    var pickup = parseCoords(data.pickup) || parseCoords(data.pickup_location)
+      || (data.pickup_lat != null && data.pickup_lng != null ? parseCoords([data.pickup_lat, data.pickup_lng]) : null)
+      || (data.pickup_location_lat != null && data.pickup_location_lng != null ? parseCoords([data.pickup_location_lat, data.pickup_location_lng]) : null);
+    var driver = parseCoords(data.driver);
+    if (pickup) {
       pickupLat = pickup[0];
       pickupLng = pickup[1];
       addPickupMarker(pickup[0], pickup[1]);
     }
-    if (driver && driver.length >= 2 && (driver[0] !== 0 || driver[1] !== 0)) {
+    if (driver && (driver[0] !== 0 || driver[1] !== 0)) {
+      lastDriverLat = driver[0];
+      lastDriverLng = driver[1];
       addDriverMarker(driver[0], driver[1]);
+    }
+    if (pickup && (driver || pickupMarker) && (driverMarker || driver) && !followDriverMode) {
+      fitMapToMarkers();
     }
 
     if (tripStatus === 'WAITING') {
-      setStatus('Go to pickup, then press START TRIP');
+      setStatus('Olib ketish joyiga boring, so\'ng SAFARNI BOSHLASH ni bosing.');
+      updateTrackButtonLabel();
       showButton('btnTrackToClient', true);
       showButton('btnStart', true);
       showButton('btnFinish', false);
-      if (driver && pickup && driver.length >= 2 && pickup.length >= 2) {
+      if (driver && pickup) {
         fetchRoute(driver[0], driver[1], pickup[0], pickup[1]).then(function (json) {
           if (json.routes && json.routes[0] && json.routes[0].geometry && json.routes[0].geometry.coordinates) {
             drawRoute(json.routes[0].geometry.coordinates);
@@ -171,14 +211,17 @@
         }).catch(function () {});
       }
     } else if (tripStatus === 'STARTED') {
-      setStatus('Trip in progress. Press FINISH TRIP when done.');
+      setStatus('Safar davom etmoqda. Tugagach SAFARNI TUGATISH ni bosing.');
+      followDriverMode = false;
       showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', true);
       if (routeLayer) map.removeLayer(routeLayer);
       routeLayer = null;
     } else if (tripStatus === 'FINISHED') {
-      setStatus('Trip finished.');
+      setStatus('Safar tugadi.');
+      followDriverMode = false;
+      updateTrackButtonLabel();
       showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', false);
@@ -186,14 +229,41 @@
     }
   }
 
-  function openNavigationToClient() {
+  function startInAppNavigation() {
     if (pickupLat == null || pickupLng == null) return;
-    var url = 'https://www.google.com/maps/dir/?api=1&destination=' + pickupLat + ',' + pickupLng + '&travelmode=driving';
-    if (typeof Telegram !== 'undefined' && Telegram.WebApp && Telegram.WebApp.openLink) {
-      Telegram.WebApp.openLink(url);
-    } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
+    followDriverMode = true;
+    setStatus('Joylashuvingiz mijozga nisbatan kuzatilmoqda');
+    updateTrackButtonLabel();
+    fitMapToDriverAndClient();
+  }
+
+  function stopInAppNavigation() {
+    followDriverMode = false;
+    setStatus('Olib ketish joyiga boring, so\'ng SAFARNI BOSHLASH ni bosing.');
+    updateTrackButtonLabel();
+  }
+
+  function updateTrackButtonLabel() {
+    var btn = document.getElementById('btnTrackToClient');
+    if (btn && tripStatus === 'WAITING') btn.textContent = followDriverMode ? 'Kuzatishni to\'xtatish' : 'Mijozga yo\'l';
+  }
+
+  function fitMapToDriverAndClient() {
+    var bounds = [];
+    if (pickupLat != null && pickupLng != null) bounds.push([pickupLat, pickupLng]);
+    if (lastDriverLat != null && lastDriverLng != null) bounds.push([lastDriverLat, lastDriverLng]);
+    if (bounds.length >= 2) {
+      map.fitBounds(bounds, { padding: [80, 40, 80, 40], maxZoom: 16 });
+    } else if (bounds.length === 1) {
+      map.setView(bounds[0], 15);
     }
+  }
+
+  function updateMapFollowDriver(lat, lng) {
+    if (!followDriverMode || !map) return;
+    lastDriverLat = lat;
+    lastDriverLng = lng;
+    fitMapToDriverAndClient();
   }
 
   function startLocationUpdates() {
@@ -201,9 +271,12 @@
     function onPos(position) {
       var lat = position.coords.latitude;
       var lng = position.coords.longitude;
+      lastDriverLat = lat;
+      lastDriverLng = lng;
       sendDriverLocation(lat, lng).then(function () {
         addDriverMarker(lat, lng);
       });
+      if (followDriverMode) updateMapFollowDriver(lat, lng);
     }
     function onErr() {}
     if (navigator.geolocation) {
@@ -237,29 +310,29 @@
     driverId = getDriverId();
     if (!tripId || !driverId) {
       showMissingParams();
-      setStatus('Missing trip_id or driver_id in URL');
+      setStatus('URLda trip_id yoki driver_id topilmadi');
       return;
     }
 
     initMap();
-    setStatus('Loading trip…');
+    setStatus('Reja yuklanmoqda…');
 
     fetchTrip()
       .then(function (data) {
         updateFromTrip(data);
-        var pickup = data.pickup;
-        if (pickup && pickup.length >= 2) {
-          map.setView([pickup[0], pickup[1]], 14);
-        }
         startLocationUpdates();
         refreshLoop();
       })
       .catch(function () {
-        setStatus('Trip not found');
+        setStatus('Reja topilmadi');
       });
 
     document.getElementById('btnTrackToClient').addEventListener('click', function () {
-      openNavigationToClient();
+      if (followDriverMode) {
+        stopInAppNavigation();
+      } else {
+        startInAppNavigation();
+      }
     });
 
     document.getElementById('btnStart').addEventListener('click', function () {
