@@ -4,6 +4,7 @@
   var map, pickupMarker, driverMarker, routeLayer;
   var tripId, driverId;
   var tripStatus = '';
+  var pickupLat, pickupLng;
   var locationWatchId = null;
   var refreshIntervalId = null;
   // Replace with your Go backend URL when deploying (e.g. https://your-api.railway.app). No trailing slash.
@@ -85,23 +86,48 @@
   }
 
   function initMap() {
-    map = L.map('map').setView([41.3, 69.2], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    map = L.map('map', {
+      zoomControl: false,
+      scrollWheelZoom: true,
+      doubleClickZoom: true,
+      touchZoom: true,
+      tap: true
+    }).setView([41.3, 69.2], 13);
+    // Softer, readable map style (CartoDB Positron)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19
     }).addTo(map);
+    L.control.zoom({ position: 'topright' }).addTo(map);
+  }
+
+  function getClientIconSvg() {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="28" height="36">' +
+      '<rect x="0.5" y="0.5" width="23" height="31" rx="2" fill="#fff" stroke="#1e293b" stroke-width="1.5"/>' +
+      '<circle cx="12" cy="8" r="4" fill="#1e293b"/>' +
+      '<rect x="7" y="14" width="10" height="8" rx="2" fill="#1e293b"/>' +
+      '<rect x="6" y="22" width="4" height="8" rx="1" fill="#1e293b"/>' +
+      '<rect x="14" y="22" width="4" height="8" rx="1" fill="#1e293b"/>' +
+      '</svg>';
   }
 
   function addPickupMarker(lat, lng) {
     if (pickupMarker) map.removeLayer(pickupMarker);
     pickupMarker = L.marker([lat, lng], {
-      icon: L.divIcon({ className: 'pickup-marker', html: '&#128205;', iconSize: [24, 24] })
-    }).addTo(map).bindPopup('Pickup');
+      icon: L.divIcon({
+        className: 'pickup-marker client-marker',
+        html: getClientIconSvg(),
+        iconSize: [28, 36],
+        iconAnchor: [14, 36]
+      })
+    }).addTo(map).bindPopup('Client / Pickup');
   }
 
   function addDriverMarker(lat, lng) {
     if (driverMarker) map.removeLayer(driverMarker);
     driverMarker = L.marker([lat, lng], {
-      icon: L.divIcon({ className: 'driver-marker', html: '&#128663;', iconSize: [24, 24] })
+      icon: L.divIcon({ className: 'driver-marker', html: '&#128663;', iconSize: [32, 32], iconAnchor: [16, 32] })
     }).addTo(map).bindPopup('Driver');
   }
 
@@ -109,8 +135,14 @@
     if (routeLayer) map.removeLayer(routeLayer);
     if (!geojsonCoords || geojsonCoords.length < 2) return;
     var latLngs = geojsonCoords.map(function (c) { return [c[1], c[0]]; });
-    routeLayer = L.polyline(latLngs, { color: '#2563eb', weight: 4 }).addTo(map);
-    map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
+    routeLayer = L.polyline(latLngs, {
+      color: '#2563eb',
+      weight: 5,
+      opacity: 0.9,
+      lineCap: 'round',
+      lineJoin: 'round'
+    }).addTo(map);
+    map.fitBounds(routeLayer.getBounds(), { padding: [50, 50], maxZoom: 15 });
   }
 
   function updateFromTrip(data) {
@@ -118,6 +150,8 @@
     var pickup = data.pickup;
     var driver = data.driver;
     if (pickup && pickup.length >= 2) {
+      pickupLat = pickup[0];
+      pickupLng = pickup[1];
       addPickupMarker(pickup[0], pickup[1]);
     }
     if (driver && driver.length >= 2 && (driver[0] !== 0 || driver[1] !== 0)) {
@@ -126,6 +160,7 @@
 
     if (tripStatus === 'WAITING') {
       setStatus('Go to pickup, then press START TRIP');
+      showButton('btnTrackToClient', true);
       showButton('btnStart', true);
       showButton('btnFinish', false);
       if (driver && pickup && driver.length >= 2 && pickup.length >= 2) {
@@ -137,15 +172,27 @@
       }
     } else if (tripStatus === 'STARTED') {
       setStatus('Trip in progress. Press FINISH TRIP when done.');
+      showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', true);
       if (routeLayer) map.removeLayer(routeLayer);
       routeLayer = null;
     } else if (tripStatus === 'FINISHED') {
       setStatus('Trip finished.');
+      showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', false);
       stopLocationUpdates();
+    }
+  }
+
+  function openNavigationToClient() {
+    if (pickupLat == null || pickupLng == null) return;
+    var url = 'https://www.google.com/maps/dir/?api=1&destination=' + pickupLat + ',' + pickupLng + '&travelmode=driving';
+    if (typeof Telegram !== 'undefined' && Telegram.WebApp && Telegram.WebApp.openLink) {
+      Telegram.WebApp.openLink(url);
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -210,6 +257,10 @@
       .catch(function () {
         setStatus('Trip not found');
       });
+
+    document.getElementById('btnTrackToClient').addEventListener('click', function () {
+      openNavigationToClient();
+    });
 
     document.getElementById('btnStart').addEventListener('click', function () {
       var btn = this;

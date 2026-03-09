@@ -2,25 +2,63 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
   <title>Trip Map</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, sans-serif; }
-    #map { position: absolute; top: 0; left: 0; right: 0; bottom: 56px; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; -webkit-tap-highlight-color: transparent; }
+    #map {
+      position: absolute; top: 0; left: 0; right: 0;
+      bottom: 72px; /* taller control bar */
+      background: #e2e8f0;
+    }
+    /* Safe area for notched phones */
+    #map { padding-bottom: env(safe-area-inset-bottom, 0); }
     #controls {
-      position: absolute; left: 0; right: 0; bottom: 0; height: 56px;
-      display: flex; align-items: center; justify-content: center; gap: 10px;
-      padding: 8px; background: #fff; border-top: 1px solid #ddd;
+      position: absolute; left: 0; right: 0; bottom: 0;
+      min-height: 72px;
+      padding: 12px 16px;
+      padding-bottom: max(12px, env(safe-area-inset-bottom));
+      display: flex; align-items: center; justify-content: center; gap: 12px;
+      background: #fff; border-top: 1px solid #e2e8f0;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+    }
+    #status {
+      flex: 1; font-size: 15px; color: #475569; line-height: 1.4;
+      min-width: 0; padding-right: 8px;
     }
     #controls button {
-      padding: 12px 24px; font-size: 16px; border: none; border-radius: 8px;
+      flex-shrink: 0;
+      min-height: 48px; min-width: 120px;
+      padding: 14px 20px; font-size: 16px; border: none; border-radius: 12px;
       background: #2563eb; color: #fff; font-weight: 600; cursor: pointer;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+      transition: transform 0.15s, box-shadow 0.15s;
     }
-    #controls button:disabled { background: #94a3b8; cursor: not-allowed; }
-    #controls button.finish { background: #dc2626; }
-    #status { font-size: 14px; color: #64748b; }
+    #controls button:active { transform: scale(0.98); }
+    #controls button:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; }
+    #controls button.finish { background: #dc2626; box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3); }
+    #controls button.track { background: #fff; color: #2563eb; border: 2px solid #2563eb; box-shadow: none; }
+    #controls button.track:active { background: #f1f5f9; }
+    #controls .controls-buttons { display: flex; gap: 8px; flex-shrink: 0; }
+    /* Larger, touch-friendly zoom controls */
+    .leaflet-control-zoom { border: none !important; }
+    .leaflet-control-zoom a {
+      width: 44px !important; height: 44px !important;
+      line-height: 44px !important; font-size: 22px !important;
+      border-radius: 12px !important; margin: 4px !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+    .leaflet-control-attribution {
+      font-size: 10px; padding: 2px 6px; opacity: 0.85;
+    }
+    /* Clearer, larger markers */
+    .pickup-marker, .driver-marker {
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25));
+    }
+    .driver-marker { font-size: 28px !important; }
+    .client-marker svg { display: block; }
     #missing-params {
       display: none;
       position: absolute; top: 0; left: 0; right: 0; bottom: 0;
@@ -42,8 +80,11 @@
   <div id="map"></div>
   <div id="controls">
     <span id="status">Loading…</span>
-    <button id="btnStart" type="button" style="display:none;">START TRIP</button>
-    <button id="btnFinish" type="button" class="finish" style="display:none;">FINISH TRIP</button>
+    <div class="controls-buttons">
+      <button id="btnTrackToClient" type="button" class="track" style="display:none;">Track way to client</button>
+      <button id="btnStart" type="button" style="display:none;">START TRIP</button>
+      <button id="btnFinish" type="button" class="finish" style="display:none;">FINISH TRIP</button>
+    </div>
   </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="map.js"></script>
