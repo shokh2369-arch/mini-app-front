@@ -7,7 +7,7 @@
   var locationWatchId = null;
   var refreshIntervalId = null;
   // Replace with your Go backend URL when deploying (e.g. https://your-api.railway.app). No trailing slash.
-  var API_BASE = 'https://YOUR_GO_BACKEND_URL';
+  var API_BASE = 'https://taxi-service-on-telegram.onrender.com';
 
   function getQueryParam(name) {
     var params = new URLSearchParams(window.location.search);
@@ -236,3 +236,4 @@
     run();
   }
 })();
+
