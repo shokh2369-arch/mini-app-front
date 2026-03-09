@@ -180,10 +180,16 @@
     }, 3000);
   }
 
+  function showMissingParams() {
+    var el = document.getElementById('missing-params');
+    if (el) el.classList.add('visible');
+  }
+
   function run() {
     tripId = getTripId();
     driverId = getDriverId();
     if (!tripId || !driverId) {
+      showMissingParams();
       setStatus('Missing trip_id or driver_id in URL');
       return;
     }
