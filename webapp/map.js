@@ -392,13 +392,36 @@
     }
   }
 
+  function ensureRouteToClient() {
+    if (!pickupLat || !pickupLng || !map) return;
+    var fromLat = lastDriverLat;
+    var fromLng = lastDriverLng;
+    if (fromLat == null || fromLng == null) return;
+    if (routeLayer) return;
+    setRouteLoading(true);
+    fetchRoute(fromLat, fromLng, pickupLat, pickupLng).then(function (json) {
+      if (json.routes && json.routes[0]) {
+        var route = json.routes[0];
+        if (route.geometry && route.geometry.coordinates) {
+          drawRoute(route.geometry.coordinates);
+        }
+        routeDistanceKm = route.distance / 1000.0;
+        routeEtaMin = route.duration / 60.0;
+        setText('routeDistance', formatKm(routeDistanceKm));
+        setText('routeEta', formatEtaMin(routeEtaMin));
+        if (followDriverMode) fitMapToDriverAndClient();
+      }
+      setRouteLoading(false);
+    }).catch(function () { setRouteLoading(false); });
+  }
+
   function startInAppNavigation() {
     if (pickupLat == null || pickupLng == null) return;
     followDriverMode = true;
     setStatus('Joylashuvingiz mijozga nisbatan kuzatilmoqda');
     updateTrackButtonLabel();
-    // Keep route visible, but follow driver marker (center on driver)
-    if (lastDriverLat != null && lastDriverLng != null && map) map.setView([lastDriverLat, lastDriverLng], Math.max(map.getZoom(), 15));
+    ensureRouteToClient();
+    fitMapToDriverAndClient();
   }
 
   function stopInAppNavigation() {
@@ -413,6 +436,7 @@
   }
 
   function fitMapToDriverAndClient() {
+    if (!map) return;
     var bounds = [];
     if (pickupLat != null && pickupLng != null) bounds.push([pickupLat, pickupLng]);
     if (lastDriverLat != null && lastDriverLng != null) bounds.push([lastDriverLat, lastDriverLng]);
@@ -427,8 +451,7 @@
     if (!followDriverMode || !map) return;
     lastDriverLat = lat;
     lastDriverLng = lng;
-    // Driver auto-follow (keep centered)
-    map.panTo([lat, lng], { animate: true, duration: 0.25 });
+    fitMapToDriverAndClient();
   }
 
   function startLocationUpdates() {
