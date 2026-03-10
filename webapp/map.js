@@ -13,6 +13,12 @@
   var lastFareLat, lastFareLng;
   var totalDistanceKm = 0;
   var currentFare = null;
+  var routeDistanceKm = null;
+  var routeEtaMin = null;
+  var isRouteLoading = false;
+  var clientPhone = null;
+  var clientName = null;
+  var pickupLabel = null;
   // Replace with your Go backend URL when deploying (e.g. https://your-api.railway.app). No trailing slash.
   var API_BASE = 'https://taxi-service-on-telegram.onrender.com';
   // Tariff: 4,000 so'm base price + 1,500 so'm per kilometer (counted from when driver starts trip)
@@ -21,7 +27,7 @@
 
   function getQueryParam(name) {
     var params = new URLSearchParams(window.location.search);
-    return params.get(name) || params.get(name);
+    return params.get(name);
   }
 
   function getTripId() {
@@ -36,13 +42,32 @@
 
   function getDriverId() {
     var id = getQueryParam('driver_id');
-    if (id) return parseInt(id, 10);
-    return null;
+    if (id == null || id === '') return null;
+    var num = parseInt(id, 10);
+    return isNaN(num) ? null : num;
   }
 
   function setStatus(text) {
     var el = document.getElementById('status');
     if (el) el.textContent = text;
+  }
+
+  function setText(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+
+  function setVisible(id, visible) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = visible ? 'block' : 'none';
+  }
+
+  function setStatusBanner() {
+    var holat = 'Yuklanmoqda…';
+    if (tripStatus === 'WAITING') holat = 'Mijozga ketilyapti';
+    else if (tripStatus === 'STARTED') holat = 'Safar boshlandi';
+    else if (tripStatus === 'FINISHED') holat = 'Safar tugadi';
+    setText('statusText', holat);
   }
 
   function showButton(id, show) {
@@ -154,6 +179,24 @@
     map.fitBounds(routeLayer.getBounds(), { padding: [50, 50], maxZoom: 15 });
   }
 
+  function setRouteLoading(loading) {
+    isRouteLoading = loading;
+    setVisible('routeLoading', loading);
+  }
+
+  function formatKm(km) {
+    if (km == null || isNaN(km)) return '—';
+    return km.toFixed(km < 10 ? 1 : 0) + ' km';
+  }
+
+  function formatEtaMin(min) {
+    if (min == null || isNaN(min)) return '—';
+    if (min < 60) return Math.round(min) + ' daqiqa';
+    var h = Math.floor(min / 60);
+    var m = Math.round(min % 60);
+    return h + ' soat ' + m + ' daqiqa';
+  }
+
   function formatNumberSoM(amount) {
     if (amount == null) return '—';
     return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -171,18 +214,19 @@
   }
 
   function updateFareText() {
-    var el = document.getElementById('fareValue');
-    if (!el) return;
     if (tripStatus !== 'STARTED' && tripStatus !== 'FINISHED') {
-      el.textContent = '—';
+      setText('fareValue', '—');
+      setText('fareDistance', '—');
       return;
     }
     if (currentFare == null) {
-      el.textContent = '—';
+      setText('fareValue', '—');
+      setText('fareDistance', '—');
       return;
     }
     var kmText = totalDistanceKm.toFixed(1);
-    el.textContent = formatNumberSoM(currentFare) + " so'm (" + kmText + ' km)';
+    setText('fareValue', formatNumberSoM(currentFare) + " so'm");
+    setText('fareDistance', kmText + ' km');
   }
 
   function startTripRecording() {
@@ -226,6 +270,7 @@
   }
 
   function fitMapToMarkers() {
+    if (!map) return;
     var bounds = [];
     if (pickupMarker) bounds.push(pickupMarker.getLatLng());
     if (driverMarker) bounds.push(driverMarker.getLatLng());
@@ -238,10 +283,29 @@
 
   function updateFromTrip(data) {
     tripStatus = data.status || '';
+    setStatusBanner();
+
     var pickup = parseCoords(data.pickup) || parseCoords(data.pickup_location)
       || (data.pickup_lat != null && data.pickup_lng != null ? parseCoords([data.pickup_lat, data.pickup_lng]) : null)
       || (data.pickup_location_lat != null && data.pickup_location_lng != null ? parseCoords([data.pickup_location_lat, data.pickup_location_lng]) : null);
     var driver = parseCoords(data.driver);
+
+    // Client info (best-effort from backend fields)
+    clientName = data.client_name || data.customer_name || data.user_name || data.name || null;
+    clientPhone = data.client_phone || data.phone || data.customer_phone || null;
+    pickupLabel = data.pickup_address || data.pickup_name || data.address || null;
+
+    setText('clientName', clientName || '—');
+    if (pickupLabel) setText('pickupText', '📍 ' + pickupLabel);
+    else if (pickup) setText('pickupText', '📍 ' + pickup[0].toFixed(5) + ', ' + pickup[1].toFixed(5));
+    else setText('pickupText', '📍 —');
+
+    if (clientPhone) {
+      setVisible('btnCall', true);
+    } else {
+      setVisible('btnCall', false);
+    }
+
     if (pickup) {
       pickupLat = pickup[0];
       pickupLng = pickup[1];
@@ -266,12 +330,26 @@
       lastFareLat = null;
       totalDistanceKm = 0;
       currentFare = null;
+      routeDistanceKm = null;
+      routeEtaMin = null;
+      setText('routeDistance', '—');
+      setText('routeEta', '—');
       if (driver && pickup) {
+        setRouteLoading(true);
         fetchRoute(driver[0], driver[1], pickup[0], pickup[1]).then(function (json) {
           if (json.routes && json.routes[0] && json.routes[0].geometry && json.routes[0].geometry.coordinates) {
             drawRoute(json.routes[0].geometry.coordinates);
           }
+          if (json.routes && json.routes[0]) {
+            routeDistanceKm = json.routes[0].distance / 1000.0;
+            routeEtaMin = json.routes[0].duration / 60.0;
+            setText('routeDistance', formatKm(routeDistanceKm));
+            setText('routeEta', formatEtaMin(routeEtaMin));
+          }
+          setRouteLoading(false);
         }).catch(function () {});
+      } else {
+        setRouteLoading(false);
       }
       updateFareText();
     } else if (tripStatus === 'STARTED') {
@@ -282,12 +360,14 @@
       showButton('btnFinish', true);
       if (routeLayer) map.removeLayer(routeLayer);
       routeLayer = null;
+      setRouteLoading(false);
       if (tripStartLat == null && lastDriverLat != null) startTripRecording();
       updateFareText();
     } else if (tripStatus === 'FINISHED') {
       setStatus('Safar tugadi.');
       followDriverMode = false;
       updateTrackButtonLabel();
+      setRouteLoading(false);
       updateFareText();
       showButton('btnTrackToClient', false);
       showButton('btnStart', false);
@@ -301,7 +381,8 @@
     followDriverMode = true;
     setStatus('Joylashuvingiz mijozga nisbatan kuzatilmoqda');
     updateTrackButtonLabel();
-    fitMapToDriverAndClient();
+    // Keep route visible, but follow driver marker (center on driver)
+    if (lastDriverLat != null && lastDriverLng != null && map) map.setView([lastDriverLat, lastDriverLng], Math.max(map.getZoom(), 15));
   }
 
   function stopInAppNavigation() {
@@ -330,7 +411,8 @@
     if (!followDriverMode || !map) return;
     lastDriverLat = lat;
     lastDriverLng = lng;
-    fitMapToDriverAndClient();
+    // Driver auto-follow (keep centered)
+    map.panTo([lat, lng], { animate: true, duration: 0.25 });
   }
 
   function startLocationUpdates() {
@@ -349,12 +431,14 @@
     function onErr() {}
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(onPos, onErr, { enableHighAccuracy: true });
-      navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, maximumAge: 5000 });
-      locationWatchId = 1;
+      locationWatchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, maximumAge: 5000 });
     }
   }
 
   function stopLocationUpdates() {
+    if (locationWatchId != null && navigator.geolocation && navigator.geolocation.clearWatch) {
+      navigator.geolocation.clearWatch(locationWatchId);
+    }
     locationWatchId = null;
     if (refreshIntervalId) {
       clearInterval(refreshIntervalId);
@@ -394,6 +478,14 @@
       .catch(function () {
         setStatus('Reja topilmadi');
       });
+
+    var callBtn = document.getElementById('btnCall');
+    if (callBtn) {
+      callBtn.addEventListener('click', function () {
+        if (!clientPhone) return;
+        window.location.href = 'tel:' + clientPhone;
+      });
+    }
 
     document.getElementById('btnTrackToClient').addEventListener('click', function () {
       if (followDriverMode) {

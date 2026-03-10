@@ -6,86 +6,249 @@
   <title>Reja xaritasi</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <style>
+    :root {
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --muted: #64748b;
+      --text: #0f172a;
+      --border: #e2e8f0;
+      --shadow: 0 10px 30px rgba(2, 6, 23, 0.08);
+      --blue: #2563eb;
+      --green: #16a34a;
+      --red: #dc2626;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; -webkit-tap-highlight-color: transparent; }
-    #map {
-      position: absolute; top: 0; left: 0; right: 0;
-      bottom: 72px; /* taller control bar */
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      -webkit-tap-highlight-color: transparent;
+      color: var(--text);
+    }
+
+    /* Layout */
+    #app {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      padding-top: env(safe-area-inset-top, 0);
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+
+    /* Top status banner */
+    #statusBanner {
+      position: sticky;
+      top: 0;
+      z-index: 1200;
+      background: #0f172a;
+      color: #fff;
+      padding: 10px 14px;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+    #statusBanner span {
+      font-weight: 700;
+      color: #e2e8f0;
+      margin-left: 8px;
+      font-size: 14px;
+    }
+
+    /* Client info card */
+    #clientCard {
+      margin: 10px 12px 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    #clientLeft { min-width: 0; }
+    #clientTitle {
+      font-size: 14px;
+      font-weight: 900;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 0 0 6px;
+    }
+    #clientName {
+      font-size: 15px;
+      font-weight: 900;
+      margin: 0;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 240px;
+    }
+    #pickupText {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 4px 0 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 240px;
+    }
+    #btnCall {
+      min-height: 44px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      color: var(--text);
+      font-weight: 900;
+      font-size: 14px;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: none;
+    }
+    #btnCall:active { transform: scale(0.98); }
+
+    /* Map */
+    #mapWrap {
+      flex: 1;
+      margin: 0 12px;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
       background: #e2e8f0;
+      position: relative;
     }
-    /* Safe area for notched phones */
-    #map { padding-bottom: env(safe-area-inset-bottom, 0); }
-    #controls {
-      position: absolute; left: 0; right: 0; bottom: 0;
-      min-height: 72px;
+    #map { width: 100%; height: 100%; }
+
+    /* Distance/ETA */
+    #routeInfo {
+      margin: 8px 12px 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
       padding: 10px 12px;
-      padding-bottom: max(10px, env(safe-area-inset-bottom));
-      display: flex; align-items: center; justify-content: flex-end; gap: 8px;
-      flex-wrap: wrap;
-      background: #fff; border-top: 1px solid #e2e8f0;
-      box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 6px 18px rgba(2, 6, 23, 0.06);
     }
-    #status {
-      flex: 1; min-width: 120px; font-size: 14px; color: #475569; line-height: 1.35;
-      padding-right: 8px;
+    #routeLoading {
+      display: none;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 800;
     }
-    #fareBox {
-      flex-basis: 100%;
+    .routeRow {
       display: flex;
       justify-content: space-between;
-      align-items: baseline;
-      font-size: 13px;
-      color: #0f172a;
-      margin-top: 4px;
+      font-size: 15px;
+      font-weight: 800;
     }
-    #fareLabel {
-      font-weight: 600;
+    .routeRow span {
+      font-weight: 900;
+      color: var(--text);
     }
-    #fareValue {
-      font-weight: 600;
-      color: #16a34a;
+
+    /* Sticky bottom panel */
+    #bottomPanel {
+      position: sticky;
+      bottom: 0;
+      z-index: 1300;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      box-shadow: 0 -8px 28px rgba(2, 6, 23, 0.12);
+      padding: 10px 12px;
+      padding-bottom: max(10px, env(safe-area-inset-bottom));
     }
-    #controls button {
-      flex-shrink: 0;
-      min-height: 44px; min-width: 0;
-      padding: 12px 16px; font-size: 15px; border: none; border-radius: 12px;
-      background: #2563eb; color: #fff; font-weight: 600; cursor: pointer;
-      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
-      transition: transform 0.15s, box-shadow 0.15s;
+
+    #farePanel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
     }
-    #controls button:active { transform: scale(0.98); }
-    #controls button:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; }
-    #controls button.finish { background: #dc2626; box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3); }
-    #controls button.track { background: #fff; color: #2563eb; border: 2px solid #2563eb; box-shadow: none; }
-    #controls button.track:active { background: #f1f5f9; }
-    #controls .controls-buttons { display: flex; gap: 8px; flex-shrink: 0; }
-    /* Larger, touch-friendly zoom controls */
+    .metric {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 12px;
+      background: #f8fafc;
+    }
+    .metricLabel {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 900;
+      margin: 0 0 6px;
+    }
+    .metricValue {
+      font-size: 18px;
+      font-weight: 950;
+      margin: 0;
+      line-height: 1.1;
+    }
+
+    #actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .actionBtn {
+      width: 100%;
+      min-height: 56px;
+      padding: 14px 16px;
+      font-size: 17px;
+      font-weight: 950;
+      border: 0;
+      border-radius: 18px;
+      color: #fff;
+      cursor: pointer;
+      letter-spacing: 0.2px;
+    }
+    .actionBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .actionBtn:active { transform: scale(0.99); }
+    .btnBlue { background: var(--blue); }
+    .btnGreen { background: var(--green); }
+    .btnRed { background: var(--red); }
+
+    /* Leaflet controls */
     .leaflet-control-zoom { border: none !important; }
     .leaflet-control-zoom a {
-      width: 44px !important; height: 44px !important;
-      line-height: 44px !important; font-size: 22px !important;
-      border-radius: 12px !important; margin: 4px !important;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      width: 48px !important;
+      height: 48px !important;
+      line-height: 48px !important;
+      font-size: 24px !important;
+      border-radius: 14px !important;
+      margin: 6px !important;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
     }
-    .leaflet-control-attribution {
-      font-size: 10px; padding: 2px 6px; opacity: 0.85;
-    }
-    /* Clearer, larger markers */
-    .pickup-marker, .driver-marker {
-      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25));
-    }
+    .leaflet-control-attribution { font-size: 10px; padding: 2px 6px; opacity: 0.85; }
+
+    /* Markers */
+    .pickup-marker, .driver-marker { filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25)); }
     .driver-marker { font-size: 28px !important; }
     .client-marker { z-index: 602 !important; }
     .client-marker svg { display: block; }
+
+    /* Kept for existing logic; hidden */
+    #status { display: none; }
+
+    /* Missing params overlay */
     #missing-params {
       display: none;
-      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-      background: #f8fafc; align-items: center; justify-content: center;
-      padding: 24px; box-sizing: border-box; z-index: 1000;
+      position: fixed; inset: 0;
+      background: #f8fafc;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+      z-index: 2000;
+      text-align: center;
     }
     #missing-params.visible { display: flex; flex-direction: column; }
     #missing-params h2 { margin: 0 0 12px; font-size: 20px; color: #1e293b; }
-    #missing-params p { margin: 0 0 16px; color: #64748b; text-align: center; max-width: 360px; line-height: 1.5; }
+    #missing-params p { margin: 0 0 16px; color: #64748b; max-width: 360px; line-height: 1.5; }
     #missing-params code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
   </style>
 </head>
@@ -95,19 +258,53 @@
     <p>Bu sahifa URLda <code>trip_id</code> va <code>driver_id</code> bilan ochilishi kerak.</p>
     <p>Misol: <code>?trip_id=123&driver_id=456</code></p>
   </div>
-  <div id="map"></div>
-  <div id="controls">
-    <span id="status">Yuklanmoqda…</span>
-    <div class="controls-buttons">
-      <button id="btnTrackToClient" type="button" class="track" style="display:none;">Mijozga yo'l</button>
-      <button id="btnStart" type="button" style="display:none;">SAFARNI BOSHLASH</button>
-      <button id="btnFinish" type="button" class="finish" style="display:none;">SAFARNI TUGATISH</button>
+
+  <div id="app">
+    <div id="statusBanner">
+      Holat: <span id="statusText">Yuklanmoqda…</span>
     </div>
-    <div id="fareBox">
-      <span id="fareLabel">Narx:</span>
-      <span id="fareValue">—</span>
+
+    <div id="clientCard">
+      <div id="clientLeft">
+        <div id="clientTitle">👤 Mijoz</div>
+        <div id="clientName">—</div>
+        <div id="pickupText">📍 —</div>
+      </div>
+      <button id="btnCall" type="button">📞 Qo'ng'iroq</button>
+    </div>
+
+    <div id="mapWrap">
+      <div id="map"></div>
+    </div>
+
+    <div id="routeInfo">
+      <div id="routeLoading">Yo'nalish hisoblanmoqda...</div>
+      <div class="routeRow">📍 Mijozgacha: <span id="routeDistance">—</span></div>
+      <div class="routeRow">⏱ Yetib borish: <span id="routeEta">—</span></div>
+    </div>
+
+    <div id="bottomPanel">
+      <span id="status">Yuklanmoqda…</span>
+
+      <div id="farePanel">
+        <div class="metric">
+          <div class="metricLabel">💰 Narx</div>
+          <div class="metricValue" id="fareValue">—</div>
+        </div>
+        <div class="metric">
+          <div class="metricLabel">📏 Masofa</div>
+          <div class="metricValue" id="fareDistance">—</div>
+        </div>
+      </div>
+
+      <div id="actions">
+        <button id="btnTrackToClient" type="button" class="actionBtn btnBlue" style="display:none;">Mijozga yo'l</button>
+        <button id="btnStart" type="button" class="actionBtn btnGreen" style="display:none;">SAFARNI BOSHLASH</button>
+        <button id="btnFinish" type="button" class="actionBtn btnRed" style="display:none;">SAFARNI TUGATISH</button>
+      </div>
     </div>
   </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="map.js"></script>
 </body>
