@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var map, pickupMarker, driverMarker, routeLayer;
+  var map, pickupMarker, driverMarker, routeLayer, quickDirectionLayer;
   var tripId, driverId;
   var tripStatus = '';
   var pickupLat, pickupLng;
@@ -70,6 +70,26 @@
       return '+' + p;
     }
     return phone;
+  }
+
+  function phoneForTelLink(phone) {
+    if (!phone) return null;
+    var s = String(phone).replace(/\D/g, '');
+    if (s.length < 9) return null;
+    if (s.indexOf('998') === 0) return '+' + s;
+    if (s.length === 9) return '+998' + s;
+    return '+' + s;
+  }
+
+  function openPhoneCall(phone) {
+    var tel = phoneForTelLink(phone);
+    if (!tel) return;
+    var a = document.createElement('a');
+    a.href = 'tel:' + tel;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 
   function setStatusBanner() {
@@ -175,7 +195,28 @@
     }).addTo(map).bindPopup('Haydovchi');
   }
 
+  function drawQuickDirectionLine() {
+    if (!map || !pickupLat || !pickupLng || lastDriverLat == null || lastDriverLng == null) return;
+    if (quickDirectionLayer) map.removeLayer(quickDirectionLayer);
+    quickDirectionLayer = L.polyline([[lastDriverLat, lastDriverLng], [pickupLat, pickupLng]], {
+      color: '#2563eb',
+      weight: 4,
+      opacity: 0.7,
+      dashArray: '8,8',
+      lineCap: 'round',
+      lineJoin: 'round'
+    }).addTo(map);
+  }
+
+  function removeQuickDirectionLine() {
+    if (quickDirectionLayer && map) {
+      map.removeLayer(quickDirectionLayer);
+      quickDirectionLayer = null;
+    }
+  }
+
   function drawRoute(geojsonCoords) {
+    removeQuickDirectionLine();
     if (routeLayer) map.removeLayer(routeLayer);
     if (!geojsonCoords || geojsonCoords.length < 2) return;
     var latLngs = geojsonCoords.map(function (c) { return [c[1], c[0]]; });
@@ -192,6 +233,19 @@
   function setRouteLoading(loading) {
     isRouteLoading = loading;
     setVisible('routeLoading', loading);
+  }
+
+  function showInstantDistanceAndEta() {
+    if (pickupLat == null || pickupLng == null) return;
+    var fromLat = lastDriverLat;
+    var fromLng = lastDriverLng;
+    if (fromLat == null || fromLng == null) return;
+    var km = haversineKm(fromLat, fromLng, pickupLat, pickupLng);
+    if (km <= 0) return;
+    setText('routeDistance', '~' + formatKm(km));
+    var etaMin = (km / 25) * 60;
+    setText('routeEta', '~' + formatEtaMin(etaMin));
+    setRouteLoading(false);
   }
 
   function formatKm(km) {
@@ -351,7 +405,7 @@
       setText('routeDistance', '—');
       setText('routeEta', '—');
       if (driver && pickup) {
-        setRouteLoading(true);
+        showInstantDistanceAndEta();
         fetchRoute(driver[0], driver[1], pickup[0], pickup[1]).then(function (json) {
           if (json.routes && json.routes[0] && json.routes[0].geometry && json.routes[0].geometry.coordinates) {
             drawRoute(json.routes[0].geometry.coordinates);
@@ -363,7 +417,7 @@
             setText('routeEta', formatEtaMin(routeEtaMin));
           }
           setRouteLoading(false);
-        }).catch(function () {});
+        }).catch(function () { setRouteLoading(false); });
       } else {
         setRouteLoading(false);
       }
@@ -397,8 +451,10 @@
     var fromLat = lastDriverLat;
     var fromLng = lastDriverLng;
     if (fromLat == null || fromLng == null) return;
-    if (routeLayer) return;
-    setRouteLoading(true);
+    if (routeLayer) {
+      fitMapToDriverAndClient();
+      return;
+    }
     fetchRoute(fromLat, fromLng, pickupLat, pickupLng).then(function (json) {
       if (json.routes && json.routes[0]) {
         var route = json.routes[0];
@@ -420,12 +476,15 @@
     followDriverMode = true;
     setStatus('Joylashuvingiz mijozga nisbatan kuzatilmoqda');
     updateTrackButtonLabel();
-    ensureRouteToClient();
+    showInstantDistanceAndEta();
+    if (!routeLayer) drawQuickDirectionLine();
     fitMapToDriverAndClient();
+    ensureRouteToClient();
   }
 
   function stopInAppNavigation() {
     followDriverMode = false;
+    removeQuickDirectionLine();
     setStatus('Olib ketish joyiga boring, so\'ng SAFARNI BOSHLASH ni bosing.');
     updateTrackButtonLabel();
   }
@@ -522,7 +581,7 @@
     if (callBtn) {
       callBtn.addEventListener('click', function () {
         if (!clientPhone) return;
-        window.location.href = 'tel:' + clientPhone;
+        openPhoneCall(clientPhone);
       });
     }
 
