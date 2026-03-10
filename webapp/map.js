@@ -84,12 +84,30 @@
   function openPhoneCall(phone) {
     var tel = phoneForTelLink(phone);
     if (!tel) return;
-    var a = document.createElement('a');
-    a.href = 'tel:' + tel;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    var telUrl = 'tel:' + tel;
+    // 1) Telegram Mini App: openLink can open tel: in system dialer on many devices
+    try {
+      if (typeof Telegram !== 'undefined' && Telegram.WebApp && typeof Telegram.WebApp.openLink === 'function') {
+        Telegram.WebApp.openLink(telUrl);
+        return;
+      }
+    } catch (e) {}
+    // 2) Some WebViews support window.open for tel:
+    try {
+      var w = window.open(telUrl, '_system');
+      if (w) return;
+    } catch (e) {}
+    // 3) Fallback: programmatic click on tel: link
+    try {
+      var a = document.createElement('a');
+      a.href = telUrl;
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener');
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {}
   }
 
   function setStatusBanner() {
@@ -370,9 +388,12 @@
     else if (pickup) setText('pickupText', '📍 ' + pickup[0].toFixed(5) + ', ' + pickup[1].toFixed(5));
     else setText('pickupText', '📍 —');
 
-    if (clientPhone) {
+    var callLink = document.getElementById('btnCall');
+    if (clientPhone && callLink) {
+      callLink.href = 'tel:' + phoneForTelLink(clientPhone);
       setVisible('btnCall', true);
     } else {
+      if (callLink) callLink.href = '#';
       setVisible('btnCall', false);
     }
 
@@ -579,9 +600,20 @@
 
     var callBtn = document.getElementById('btnCall');
     if (callBtn) {
-      callBtn.addEventListener('click', function () {
-        if (!clientPhone) return;
-        openPhoneCall(clientPhone);
+      callBtn.addEventListener('click', function (e) {
+        if (!clientPhone) {
+          e.preventDefault();
+          return;
+        }
+        // Try Telegram openLink first (often works for tel: in Mini App)
+        try {
+          if (typeof Telegram !== 'undefined' && Telegram.WebApp && typeof Telegram.WebApp.openLink === 'function') {
+            e.preventDefault();
+            Telegram.WebApp.openLink('tel:' + phoneForTelLink(clientPhone));
+            return;
+          }
+        } catch (err) {}
+        // Otherwise let the <a href="tel:..."> work natively
       });
     }
 
