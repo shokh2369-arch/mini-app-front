@@ -62,6 +62,16 @@
     if (el) el.style.display = visible ? 'block' : 'none';
   }
 
+  function normalizePhoneDisplay(phone) {
+    if (!phone || typeof phone !== 'string') return '—';
+    var p = phone.replace(/\D/g, '');
+    if (p.length >= 9 && p.length <= 15) {
+      if (p.indexOf('998') === 0) return '+998 ' + p.slice(3).replace(/(\d{2})(\d{3})(\d{2})(\d{2})/, '$1 $2 $3 $4');
+      return '+' + p;
+    }
+    return phone;
+  }
+
   function setStatusBanner() {
     var holat = 'Yuklanmoqda…';
     if (tripStatus === 'WAITING') holat = 'Mijozga ketilyapti';
@@ -290,12 +300,18 @@
       || (data.pickup_location_lat != null && data.pickup_location_lng != null ? parseCoords([data.pickup_location_lat, data.pickup_location_lng]) : null);
     var driver = parseCoords(data.driver);
 
-    // Client info (best-effort from backend fields)
-    clientName = data.client_name || data.customer_name || data.user_name || data.name || null;
-    clientPhone = data.client_phone || data.phone || data.customer_phone || null;
+    // Client/rider info: match taxi-service-on-telegram backend field names
+    clientName = data.rider_name || data.client_name || data.customer_name || data.user_name || data.name || null;
+    clientPhone = null;
+    if (data.rider_info && typeof data.rider_info === 'object') {
+      clientPhone = data.rider_info.phone || data.rider_info.phone_number || null;
+      if (!clientName && data.rider_info.name) clientName = data.rider_info.name;
+    }
+    clientPhone = clientPhone || data.rider_phone || data.client_phone || data.phone || data.customer_phone || null;
     pickupLabel = data.pickup_address || data.pickup_name || data.address || null;
 
     setText('clientName', clientName || '—');
+    setText('clientPhone', clientPhone ? normalizePhoneDisplay(clientPhone) : '—');
     if (pickupLabel) setText('pickupText', '📍 ' + pickupLabel);
     else if (pickup) setText('pickupText', '📍 ' + pickup[0].toFixed(5) + ', ' + pickup[1].toFixed(5));
     else setText('pickupText', '📍 —');

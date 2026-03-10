@@ -78,15 +78,15 @@
       margin: 0 0 6px;
     }
     #clientName {
-      font-size: 15px;
-      font-weight: 900;
-      margin: 0;
-      line-height: 1.2;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 240px;
+      display: none; /* client name not needed, only phone */
     }
+    .clientPhoneRow {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 4px 0 0;
+    }
+    .clientPhoneRow span { font-weight: 800; }
     #pickupText {
       font-size: 13px;
       color: var(--muted);
@@ -268,6 +268,7 @@
       <div id="clientLeft">
         <div id="clientTitle">👤 Mijoz</div>
         <div id="clientName">—</div>
+        <div id="clientPhoneRow" class="clientPhoneRow">📞 <span id="clientPhone">—</span></div>
         <div id="pickupText">📍 —</div>
       </div>
       <button id="btnCall" type="button">📞 Qo'ng'iroq</button>
