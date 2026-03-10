@@ -29,6 +29,22 @@
       flex: 1; min-width: 120px; font-size: 14px; color: #475569; line-height: 1.35;
       padding-right: 8px;
     }
+    #fareBox {
+      flex-basis: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 13px;
+      color: #0f172a;
+      margin-top: 4px;
+    }
+    #fareLabel {
+      font-weight: 600;
+    }
+    #fareValue {
+      font-weight: 600;
+      color: #16a34a;
+    }
     #controls button {
       flex-shrink: 0;
       min-height: 44px; min-width: 0;
@@ -86,6 +102,10 @@
       <button id="btnTrackToClient" type="button" class="track" style="display:none;">Mijozga yo'l</button>
       <button id="btnStart" type="button" style="display:none;">SAFARNI BOSHLASH</button>
       <button id="btnFinish" type="button" class="finish" style="display:none;">SAFARNI TUGATISH</button>
+    </div>
+    <div id="fareBox">
+      <span id="fareLabel">Narx:</span>
+      <span id="fareValue">—</span>
     </div>
   </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>

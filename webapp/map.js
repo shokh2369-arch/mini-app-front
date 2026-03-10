@@ -9,8 +9,15 @@
   var followDriverMode = false;
   var locationWatchId = null;
   var refreshIntervalId = null;
+  var tripStartLat, tripStartLng;
+  var lastFareLat, lastFareLng;
+  var totalDistanceKm = 0;
+  var currentFare = null;
   // Replace with your Go backend URL when deploying (e.g. https://your-api.railway.app). No trailing slash.
   var API_BASE = 'https://taxi-service-on-telegram.onrender.com';
+  // Tariff: 4,000 so'm base price + 1,500 so'm per kilometer (counted from when driver starts trip)
+  var BASE_FARE = 4000;     // boshlang'ich narx (so'm)
+  var PER_KM_FARE = 1500;   // har kilometr uchun (so'm)
 
   function getQueryParam(name) {
     var params = new URLSearchParams(window.location.search);
@@ -147,6 +154,58 @@
     map.fitBounds(routeLayer.getBounds(), { padding: [50, 50], maxZoom: 15 });
   }
 
+  function formatNumberSoM(amount) {
+    if (amount == null) return '—';
+    return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  }
+
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    var R = 6371;
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  function updateFareText() {
+    var el = document.getElementById('fareValue');
+    if (!el) return;
+    if (tripStatus !== 'STARTED' && tripStatus !== 'FINISHED') {
+      el.textContent = '—';
+      return;
+    }
+    if (currentFare == null) {
+      el.textContent = '—';
+      return;
+    }
+    var kmText = totalDistanceKm.toFixed(1);
+    el.textContent = formatNumberSoM(currentFare) + " so'm (" + kmText + ' km)';
+  }
+
+  function startTripRecording() {
+    if (lastDriverLat == null || lastDriverLng == null) return;
+    tripStartLat = lastDriverLat;
+    tripStartLng = lastDriverLng;
+    lastFareLat = lastDriverLat;
+    lastFareLng = lastDriverLng;
+    totalDistanceKm = 0;
+    currentFare = BASE_FARE;
+    updateFareText();
+  }
+
+  function addDistanceAndUpdateFare(lat, lng) {
+    if (lastFareLat == null || lastFareLng == null) return;
+    var km = haversineKm(lastFareLat, lastFareLng, lat, lng);
+    totalDistanceKm += km;
+    lastFareLat = lat;
+    lastFareLng = lng;
+    currentFare = BASE_FARE + Math.round(totalDistanceKm * PER_KM_FARE);
+    updateFareText();
+  }
+
   function parseCoords(value) {
     if (!value) return null;
     if (Array.isArray(value) && value.length >= 2) {
@@ -203,6 +262,10 @@
       showButton('btnTrackToClient', true);
       showButton('btnStart', true);
       showButton('btnFinish', false);
+      tripStartLat = null;
+      lastFareLat = null;
+      totalDistanceKm = 0;
+      currentFare = null;
       if (driver && pickup) {
         fetchRoute(driver[0], driver[1], pickup[0], pickup[1]).then(function (json) {
           if (json.routes && json.routes[0] && json.routes[0].geometry && json.routes[0].geometry.coordinates) {
@@ -210,6 +273,7 @@
           }
         }).catch(function () {});
       }
+      updateFareText();
     } else if (tripStatus === 'STARTED') {
       setStatus('Safar davom etmoqda. Tugagach SAFARNI TUGATISH ni bosing.');
       followDriverMode = false;
@@ -218,10 +282,13 @@
       showButton('btnFinish', true);
       if (routeLayer) map.removeLayer(routeLayer);
       routeLayer = null;
+      if (tripStartLat == null && lastDriverLat != null) startTripRecording();
+      updateFareText();
     } else if (tripStatus === 'FINISHED') {
       setStatus('Safar tugadi.');
       followDriverMode = false;
       updateTrackButtonLabel();
+      updateFareText();
       showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', false);
@@ -277,6 +344,7 @@
         addDriverMarker(lat, lng);
       });
       if (followDriverMode) updateMapFollowDriver(lat, lng);
+      if (tripStatus === 'STARTED') addDistanceAndUpdateFare(lat, lng);
     }
     function onErr() {}
     if (navigator.geolocation) {
@@ -340,7 +408,8 @@
       btn.disabled = true;
       startTrip()
         .then(function () {
-          fetchTrip().then(updateFromTrip);
+          startTripRecording();
+          return fetchTrip().then(updateFromTrip);
         })
         .catch(function () {
           btn.disabled = false;
