@@ -8,7 +8,6 @@
   var lastDriverLat, lastDriverLng;
   var followDriverMode = false;
   var locationWatchId = null;
-  var refreshIntervalId = null;
   var tripStartLat, tripStartLng;
   var lastFareLat, lastFareLng;
   var totalDistanceKm = 0;
@@ -19,11 +18,26 @@
   var clientPhone = null;
   var clientName = null;
   var pickupLabel = null;
-  // Replace with your Go backend URL when deploying (e.g. https://your-api.railway.app). No trailing slash.
+  var ws = null;
+  var wsReconnectTimer = null;
+  var lastRouteRecalcTime = 0;
+  var ROUTE_DEVIATION_METERS = 50;
+  var GPS_ACCURACY_MAX_METERS = 50;
+  var MIN_SPEED_KMH_FARE = 2;
+  var gpsHistory = [];
+  var GPS_HISTORY_SIZE = 3;
+  var lastFareTime = 0;
+
   var API_BASE = 'https://taxi-service-on-telegram.onrender.com';
-  // Tariff: 4,000 so'm base price + 1,500 so'm per kilometer (counted from when driver starts trip)
-  var BASE_FARE = 4000;     // boshlang'ich narx (so'm)
-  var PER_KM_FARE = 1500;   // har kilometr uchun (so'm)
+  var BASE_FARE = 4000;
+  var PER_KM_FARE = 1500;
+
+  function getWsUrl() {
+    var base = API_BASE;
+    if (base.indexOf('https://') === 0) return base.replace('https://', 'wss://') + '/ws';
+    if (base.indexOf('http://') === 0) return base.replace('http://', 'ws://') + '/ws';
+    return 'wss://' + base + '/ws';
+  }
 
   function getQueryParam(name) {
     var params = new URLSearchParams(window.location.search);
@@ -81,40 +95,12 @@
     return '+' + s;
   }
 
-  function openPhoneCall(phone) {
-    var tel = phoneForTelLink(phone);
-    if (!tel) return;
-    var telUrl = 'tel:' + tel;
-    // 1) Telegram Mini App: openLink can open tel: in system dialer on many devices
-    try {
-      if (typeof Telegram !== 'undefined' && Telegram.WebApp && typeof Telegram.WebApp.openLink === 'function') {
-        Telegram.WebApp.openLink(telUrl);
-        return;
-      }
-    } catch (e) {}
-    // 2) Some WebViews support window.open for tel:
-    try {
-      var w = window.open(telUrl, '_system');
-      if (w) return;
-    } catch (e) {}
-    // 3) Fallback: programmatic click on tel: link
-    try {
-      var a = document.createElement('a');
-      a.href = telUrl;
-      a.setAttribute('target', '_blank');
-      a.setAttribute('rel', 'noopener');
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } catch (e) {}
-  }
-
   function setStatusBanner() {
     var holat = 'Yuklanmoqda…';
     if (tripStatus === 'WAITING') holat = 'Mijozga ketilyapti';
     else if (tripStatus === 'STARTED') holat = 'Safar boshlandi';
     else if (tripStatus === 'FINISHED') holat = 'Safar tugadi';
+    else if (tripStatus === 'CANCELLED') holat = 'Safar bekor qilindi';
     setText('statusText', holat);
   }
 
@@ -161,6 +147,66 @@
     });
   }
 
+  function cancelTrip() {
+    return fetch(API_BASE + '/trip/cancel/driver', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trip_id: tripId, driver_id: driverId })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('Cancel failed');
+      return r.json();
+    });
+  }
+
+  function connectWebSocket() {
+    if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
+    var url = getWsUrl();
+    try {
+      ws = new WebSocket(url);
+      ws.onopen = function () {
+        ws.send(JSON.stringify({ type: 'subscribe', trip_id: tripId, driver_id: driverId }));
+      };
+      ws.onmessage = function (ev) {
+        try {
+          var msg = JSON.parse(ev.data);
+          var type = msg.type || msg.event;
+          if (type === 'driver_location_update' && msg.lat != null && msg.lng != null) {
+            lastDriverLat = parseFloat(msg.lat);
+            lastDriverLng = parseFloat(msg.lng);
+            addDriverMarker(lastDriverLat, lastDriverLng);
+            if (followDriverMode) fitMapToDriverAndClient();
+          } else if (type === 'trip_started') {
+            tripStatus = 'STARTED';
+            updateFromTrip({ status: 'STARTED' });
+          } else if (type === 'trip_finished') {
+            tripStatus = 'FINISHED';
+            updateFromTrip({ status: 'FINISHED' });
+          } else if (type === 'trip_cancelled') {
+            tripStatus = 'CANCELLED';
+            updateFromTrip({ status: 'CANCELLED' });
+          }
+        } catch (e) {}
+      };
+      ws.onclose = function () {
+        ws = null;
+        if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = setTimeout(connectWebSocket, 3000);
+      };
+      ws.onerror = function () {}
+    } catch (e) {}
+  }
+
+  function disconnectWebSocket() {
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+    }
+    if (ws) {
+      try { ws.close(); } catch (e) {}
+      ws = null;
+    }
+  }
+
   function fetchRoute(fromLat, fromLng, toLat, toLng) {
     var coords = fromLng + ',' + fromLat + ';' + toLng + ',' + toLat;
     var url = 'https://router.project-osrm.org/route/v1/driving/' + coords + '?overview=full&geometries=geojson';
@@ -175,7 +221,6 @@
       touchZoom: true,
       tap: true
     }).setView([41.3, 69.2], 13);
-    // Softer, readable map style (CartoDB Positron)
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap &copy; CARTO',
       subdomains: 'abcd',
@@ -185,12 +230,11 @@
   }
 
   function getClientIconSvg() {
-    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="28" height="36">' +
-      '<rect x="0.5" y="0.5" width="23" height="31" rx="2" fill="#fff" stroke="#1e293b" stroke-width="1.5"/>' +
-      '<circle cx="12" cy="8" r="4" fill="#1e293b"/>' +
-      '<rect x="7" y="14" width="10" height="8" rx="2" fill="#1e293b"/>' +
-      '<rect x="6" y="22" width="4" height="8" rx="1" fill="#1e293b"/>' +
-      '<rect x="14" y="22" width="4" height="8" rx="1" fill="#1e293b"/>' +
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 52" width="40" height="52">' +
+      '<path d="M20 0C12.3 0 6 6.3 6 14c0 5.2 3.2 9.6 7.6 11.4L6 52h28l-7.6-26.6c4.4-1.8 7.6-6.2 7.6-11.4C34 6.3 27.7 0 20 0z" fill="#2563eb" stroke="#1e40af" stroke-width="1.5"/>' +
+      '<circle cx="20" cy="14" r="8" fill="#fff"/>' +
+      '<circle cx="20" cy="14" r="5" fill="#1e293b"/>' +
+      '<path d="M12 24h16v6c0 2-1.5 4-4 4h-8c-2.5 0-4-2-4-4v-6z" fill="#fff"/>' +
       '</svg>';
   }
 
@@ -200,8 +244,8 @@
       icon: L.divIcon({
         className: 'pickup-marker client-marker',
         html: getClientIconSvg(),
-        iconSize: [28, 36],
-        iconAnchor: [14, 36]
+        iconSize: [40, 52],
+        iconAnchor: [20, 52]
       })
     }).addTo(map).bindPopup('Mijoz / Olib ketish joyi');
   }
@@ -209,7 +253,7 @@
   function addDriverMarker(lat, lng) {
     if (driverMarker) map.removeLayer(driverMarker);
     driverMarker = L.marker([lat, lng], {
-      icon: L.divIcon({ className: 'driver-marker', html: '&#128663;', iconSize: [32, 32], iconAnchor: [16, 32] })
+      icon: L.divIcon({ className: 'driver-marker', html: '&#128663;', iconSize: [36, 36], iconAnchor: [18, 36] })
     }).addTo(map).bindPopup('Haydovchi');
   }
 
@@ -233,6 +277,73 @@
     }
   }
 
+  function getLatLng(ll) {
+    if (!ll) return null;
+    if (typeof ll.lat === 'number' && typeof ll.lng === 'number') return [ll.lat, ll.lng];
+    if (typeof ll.lat === 'function' && typeof ll.lng === 'function') return [ll.lat(), ll.lng()];
+    if (Array.isArray(ll) && ll.length >= 2) return [parseFloat(ll[0]), parseFloat(ll[1])];
+    return null;
+  }
+
+  function distanceFromPointToRouteKm(lat, lng) {
+    if (!routeLayer) return Infinity;
+    var latlngs = routeLayer.getLatLngs();
+    if (!latlngs || latlngs.length < 2) return Infinity;
+    var minDist = Infinity;
+    for (var i = 0; i < latlngs.length - 1; i++) {
+      var a = getLatLng(latlngs[i]);
+      var b = getLatLng(latlngs[i + 1]);
+      if (!a || !b) continue;
+      var toSeg = pointToSegmentDistanceKm(lat, lng, a[0], a[1], b[0], b[1]);
+      if (toSeg < minDist) minDist = toSeg;
+    }
+    return minDist;
+  }
+
+  function pointToSegmentDistanceKm(lat, lng, lat1, lng1, lat2, lng2) {
+    var R = 6371;
+    var toRad = Math.PI / 180;
+    var dLat = (lat2 - lat1) * toRad;
+    var dLng = (lng2 - lng1) * toRad;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    var segLen = R * c;
+    if (segLen < 1e-6) return haversineKm(lat, lng, lat1, lng1);
+    var d1 = haversineKm(lat, lng, lat1, lng1);
+    var d2 = haversineKm(lat, lng, lat2, lng2);
+    var d3 = haversineKm(lat1, lng1, lat2, lng2);
+    var u = (d1 * d1 - d2 * d2 + d3 * d3) / (2 * d3);
+    u = Math.max(0, Math.min(1, u / d3));
+    var latM = lat1 + u * (lat2 - lat1);
+    var lngM = lng1 + u * (lng2 - lng1);
+    return haversineKm(lat, lng, latM, lngM);
+  }
+
+  function checkRouteDeviationAndRecalc(lat, lng) {
+    if (tripStatus !== 'WAITING' || !routeLayer || !pickupLat || !pickupLng) return;
+    var now = Date.now();
+    if (now - lastRouteRecalcTime < 5000) return;
+    var distKm = distanceFromPointToRouteKm(lat, lng);
+    if (distKm * 1000 <= ROUTE_DEVIATION_METERS) return;
+    lastRouteRecalcTime = now;
+    setRouteLoading(true);
+    fetchRoute(lat, lng, pickupLat, pickupLng).then(function (json) {
+      if (json.routes && json.routes[0]) {
+        var route = json.routes[0];
+        if (route.geometry && route.geometry.coordinates) {
+          drawRoute(route.geometry.coordinates);
+        }
+        routeDistanceKm = route.distance / 1000.0;
+        routeEtaMin = route.duration / 60.0;
+        setText('routeDistance', formatKm(routeDistanceKm));
+        setText('routeEta', formatEtaMin(routeEtaMin));
+        if (followDriverMode) fitMapToDriverAndClient();
+      }
+      setRouteLoading(false);
+    }).catch(function () { setRouteLoading(false); });
+  }
+
   function drawRoute(geojsonCoords) {
     removeQuickDirectionLine();
     if (routeLayer) map.removeLayer(routeLayer);
@@ -240,12 +351,13 @@
     var latLngs = geojsonCoords.map(function (c) { return [c[1], c[0]]; });
     routeLayer = L.polyline(latLngs, {
       color: '#2563eb',
-      weight: 5,
-      opacity: 0.9,
+      weight: 7,
+      opacity: 0.95,
       lineCap: 'round',
-      lineJoin: 'round'
+      lineJoin: 'round',
+      className: 'route-line-highlight'
     }).addTo(map);
-    map.fitBounds(routeLayer.getBounds(), { padding: [50, 50], maxZoom: 15 });
+    if (!followDriverMode) map.fitBounds(routeLayer.getBounds(), { padding: [50, 50], maxZoom: 15 });
   }
 
   function setRouteLoading(loading) {
@@ -311,20 +423,35 @@
     setText('fareDistance', kmText + ' km');
   }
 
+  function vibrateTripStart() {
+    try {
+      if (navigator.vibrate) navigator.vibrate(200);
+    } catch (e) {}
+  }
+
   function startTripRecording() {
     if (lastDriverLat == null || lastDriverLng == null) return;
     tripStartLat = lastDriverLat;
     tripStartLng = lastDriverLng;
     lastFareLat = lastDriverLat;
     lastFareLng = lastDriverLng;
+    lastFareTime = Date.now();
     totalDistanceKm = 0;
     currentFare = BASE_FARE;
     updateFareText();
+    vibrateTripStart();
   }
 
   function addDistanceAndUpdateFare(lat, lng) {
     if (lastFareLat == null || lastFareLng == null) return;
     var km = haversineKm(lastFareLat, lastFareLng, lat, lng);
+    if (km < 1e-9) return;
+    var now = Date.now();
+    if (lastFareTime <= 0) lastFareTime = now;
+    var timeHours = (now - lastFareTime) / 3600000;
+    lastFareTime = now;
+    var speedKmh = timeHours > 0.0001 ? km / timeHours : 0;
+    if (speedKmh <= MIN_SPEED_KMH_FARE) return;
     totalDistanceKm += km;
     lastFareLat = lat;
     lastFareLng = lng;
@@ -363,6 +490,18 @@
     }
   }
 
+  function smoothGpsPosition(lat, lng) {
+    gpsHistory.push({ lat: lat, lng: lng, t: Date.now() });
+    if (gpsHistory.length > GPS_HISTORY_SIZE) gpsHistory.shift();
+    if (gpsHistory.length < 2) return { lat: lat, lng: lng };
+    var sumLat = 0, sumLng = 0, n = gpsHistory.length;
+    for (var i = 0; i < n; i++) {
+      sumLat += gpsHistory[i].lat;
+      sumLng += gpsHistory[i].lng;
+    }
+    return { lat: sumLat / n, lng: sumLng / n };
+  }
+
   function updateFromTrip(data) {
     tripStatus = data.status || '';
     setStatusBanner();
@@ -372,7 +511,6 @@
       || (data.pickup_location_lat != null && data.pickup_location_lng != null ? parseCoords([data.pickup_location_lat, data.pickup_location_lng]) : null);
     var driver = parseCoords(data.driver);
 
-    // Client/rider info: match taxi-service-on-telegram backend field names
     clientName = data.rider_name || data.client_name || data.customer_name || data.user_name || data.name || null;
     clientPhone = null;
     if (data.rider_info && typeof data.rider_info === 'object') {
@@ -417,6 +555,7 @@
       showButton('btnTrackToClient', true);
       showButton('btnStart', true);
       showButton('btnFinish', false);
+      showButton('btnCancel', true);
       tripStartLat = null;
       lastFareLat = null;
       totalDistanceKm = 0;
@@ -449,6 +588,7 @@
       showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', true);
+      showButton('btnCancel', false);
       if (routeLayer) map.removeLayer(routeLayer);
       routeLayer = null;
       setRouteLoading(false);
@@ -463,6 +603,16 @@
       showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', false);
+      showButton('btnCancel', false);
+      stopLocationUpdates();
+    } else if (tripStatus === 'CANCELLED') {
+      setStatus('Safar bekor qilindi.');
+      followDriverMode = false;
+      setRouteLoading(false);
+      showButton('btnTrackToClient', false);
+      showButton('btnStart', false);
+      showButton('btnFinish', false);
+      showButton('btnCancel', false);
       stopLocationUpdates();
     }
   }
@@ -537,13 +687,19 @@
   function startLocationUpdates() {
     if (locationWatchId != null) return;
     function onPos(position) {
+      var acc = position.coords.accuracy;
+      if (acc > GPS_ACCURACY_MAX_METERS) return;
       var lat = position.coords.latitude;
       var lng = position.coords.longitude;
+      var smoothed = smoothGpsPosition(lat, lng);
+      lat = smoothed.lat;
+      lng = smoothed.lng;
       lastDriverLat = lat;
       lastDriverLng = lng;
       sendDriverLocation(lat, lng).then(function () {
         addDriverMarker(lat, lng);
       });
+      if (tripStatus === 'WAITING') checkRouteDeviationAndRecalc(lat, lng);
       if (followDriverMode) updateMapFollowDriver(lat, lng);
       if (tripStatus === 'STARTED') addDistanceAndUpdateFare(lat, lng);
     }
@@ -559,16 +715,7 @@
       navigator.geolocation.clearWatch(locationWatchId);
     }
     locationWatchId = null;
-    if (refreshIntervalId) {
-      clearInterval(refreshIntervalId);
-      refreshIntervalId = null;
-    }
-  }
-
-  function refreshLoop() {
-    refreshIntervalId = setInterval(function () {
-      fetchTrip().then(updateFromTrip).catch(function () {});
-    }, 3000);
+    disconnectWebSocket();
   }
 
   function showMissingParams() {
@@ -587,12 +734,12 @@
 
     initMap();
     setStatus('Reja yuklanmoqda…');
+    connectWebSocket();
 
     fetchTrip()
       .then(function (data) {
         updateFromTrip(data);
         startLocationUpdates();
-        refreshLoop();
       })
       .catch(function () {
         setStatus('Reja topilmadi');
@@ -605,7 +752,6 @@
           e.preventDefault();
           return;
         }
-        // Try Telegram openLink first (often works for tel: in Mini App)
         try {
           if (typeof Telegram !== 'undefined' && Telegram.WebApp && typeof Telegram.WebApp.openLink === 'function') {
             e.preventDefault();
@@ -613,7 +759,6 @@
             return;
           }
         } catch (err) {}
-        // Otherwise let the <a href="tel:..."> work natively
       });
     }
 
@@ -649,6 +794,28 @@
           btn.disabled = false;
         });
     });
+
+    var btnCancel = document.getElementById('btnCancel');
+    if (btnCancel) {
+      btnCancel.addEventListener('click', function () {
+        var btn = this;
+        btn.disabled = true;
+        cancelTrip()
+          .then(function () {
+            tripStatus = 'CANCELLED';
+            setStatusBanner();
+            setStatus('Safar bekor qilindi.');
+            showButton('btnTrackToClient', false);
+            showButton('btnStart', false);
+            showButton('btnFinish', false);
+            showButton('btnCancel', false);
+            stopLocationUpdates();
+          })
+          .catch(function () {
+            btn.disabled = false;
+          });
+      });
+    }
   }
 
   if (document.readyState === 'loading') {
@@ -657,4 +824,3 @@
     run();
   }
 })();
-
