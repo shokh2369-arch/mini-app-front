@@ -408,42 +408,41 @@
     var btnCall = document.getElementById('btnCallDriver');
     if (btnCall) {
       btnCall.addEventListener('click', function (e) {
-        if (!driverPhone) {
-          e.preventDefault();
-          return;
-        }
+        e.preventDefault();
+        if (!driverPhone) return;
         var tel = String(driverPhone).replace(/\D/g, '');
-        if (tel.length >= 9) {
-          if (tel.indexOf('998') === 0) tel = '+' + tel;
-          else if (tel.length === 9) tel = '+998' + tel;
-          else tel = '+' + tel;
-        }
+        if (tel.length === 9) tel = '998' + tel;
+        if (tel.length >= 9) tel = '+' + tel;
+        var telUrl = 'tel:' + tel;
         try {
           if (typeof Telegram !== 'undefined' && Telegram.WebApp && typeof Telegram.WebApp.openLink === 'function') {
-            e.preventDefault();
-            Telegram.WebApp.openLink('tel:' + tel);
+            Telegram.WebApp.openLink(telUrl);
             return;
           }
         } catch (err) {}
-        btnCall.href = 'tel:' + tel;
+        window.location.href = telUrl;
       });
     }
 
-    document.getElementById('btnCancelTrip').addEventListener('click', function () {
-      var btn = this;
-      btn.disabled = true;
-      cancelTrip()
-        .then(function () { return fetchTrip(); })
-        .then(function (data) {
-          applyTripData(data);
-        })
-        .catch(function () {
-          btn.disabled = false;
-        })
-        .finally(function () {
-          btn.disabled = false;
-        });
-    });
+    var btnCancel = document.getElementById('btnCancelTrip');
+    if (btnCancel) {
+      btnCancel.addEventListener('click', function () {
+        var btn = this;
+        btn.disabled = true;
+        cancelTrip()
+          .then(function () { return fetchTrip(); })
+          .then(function (data) {
+            applyTripData(data);
+          })
+          .catch(function (err) {
+            setText('statusText', 'Safarni bekor qilish muvaffaqiyatsiz. Qaytadan urinib ko\'ring.');
+            if (typeof console !== 'undefined' && console.error) console.error('Cancel trip failed:', err);
+          })
+          .finally(function () {
+            btn.disabled = false;
+          });
+      });
+    }
   }
 
   if (document.readyState === 'loading') {
