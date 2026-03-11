@@ -1,0 +1,14 @@
+---
+description: Push changes to GitHub after making edits to the project
+alwaysApply: true
+---
+
+# Push to GitHub After Changes
+
+Whenever you make changes to this project (edit, add, or delete files):
+
+1. **Stage all changes**: `git add -A`
+2. **Commit** with a short, clear message describing what changed: `git commit -m "Your message"`
+3. **Push** to the remote: `git push`
+
+Use the project root as the working directory (`d:\mini app front` or the workspace path). If the user is on a different branch, push that branch. If there is nothing to commit (working tree clean), skip the commit step and only push if there are unpushed commits.
