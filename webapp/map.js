@@ -79,6 +79,10 @@
     if (el) el.textContent = text;
   }
 
+  function showBannerError(message) {
+    setText('statusText', message || 'Xatolik');
+  }
+
   function setText(id, text) {
     var el = document.getElementById(id);
     if (el) el.textContent = text;
@@ -152,16 +156,17 @@
     });
   }
 
-  // Backend (taxi-service-on-telegram): POST body is { "trip_id": "..." }; driver comes from auth context.
+  // Backend expects trip_id; driver from auth. Sending driver_id in body for backends that accept it for Mini App.
   function startTrip() {
     return fetch(API_BASE + '/trip/start', {
       method: 'POST',
       headers: apiHeaders(),
-      body: JSON.stringify({ trip_id: String(tripId) })
+      body: JSON.stringify({ trip_id: String(tripId), driver_id: driverId })
     }).then(function (r) {
       if (!r.ok) {
         var e = new Error(r.status === 401 ? '401 Unauthorized' : 'Start failed');
         e.status = r.status;
+        e.response = r;
         throw e;
       }
       return r.text().then(function (text) {
@@ -174,7 +179,7 @@
     return fetch(API_BASE + '/trip/finish', {
       method: 'POST',
       headers: apiHeaders(),
-      body: JSON.stringify({ trip_id: String(tripId) })
+      body: JSON.stringify({ trip_id: String(tripId), driver_id: driverId })
     }).then(function (r) {
       if (!r.ok) throw new Error('Finish failed');
       return r.text().then(function (text) {
@@ -187,9 +192,13 @@
     return fetch(API_BASE + '/trip/cancel/driver', {
       method: 'POST',
       headers: apiHeaders(),
-      body: JSON.stringify({ trip_id: String(tripId) })
+      body: JSON.stringify({ trip_id: String(tripId), driver_id: driverId })
     }).then(function (r) {
-      if (!r.ok) throw new Error('Cancel failed');
+      if (!r.ok) {
+        var e = new Error(r.status === 401 ? '401 Unauthorized' : 'Cancel failed');
+        e.status = r.status;
+        throw e;
+      }
       return r.text().then(function (text) {
         try { return text && text.length ? JSON.parse(text) : {}; } catch (e) { return {}; }
       });
@@ -846,10 +855,11 @@
           btn.disabled = false;
           var msg = (err && err.message ? err.message : '') + (err && err.status ? ' ' + err.status : '');
           if (msg.indexOf('401') !== -1 || msg.indexOf('Unauthorized') !== -1) {
-            setStatus('Haydovchi tasdiqlanmadi. Mini App ni Telegram orqali oching.');
+            showBannerError('Haydovchi tasdiqlanmadi. Mini App ni Telegram orqali oching.');
           } else {
-            setStatus('Safarni boshlash muvaffaqiyatsiz. Qaytadan urinib ko\'ring.');
+            showBannerError('Safarni boshlash muvaffaqiyatsiz. Qaytadan urinib ko\'ring.');
           }
+          setTimeout(setStatusBanner, 8000);
           if (typeof console !== 'undefined' && console.error) console.error('Start trip failed:', err);
         });
     });
@@ -882,15 +892,10 @@
           .then(function (data) {
             updateFromTrip(data);
           })
-          .catch(function () {
-            tripStatus = 'CANCELLED_BY_DRIVER';
-            setStatusBanner();
-            setStatus('Safar bekor qilindi.');
-            showButton('btnTrackToClient', false);
-            showButton('btnStart', false);
-            showButton('btnFinish', false);
-            showButton('btnCancel', false);
-            stopLocationUpdates();
+          .catch(function (err) {
+            showBannerError('Safarni bekor qilish muvaffaqiyatsiz. Qaytadan urinib ko\'ring.');
+            setTimeout(setStatusBanner, 6000);
+            if (typeof console !== 'undefined' && console.error) console.error('Cancel trip failed:', err);
           })
           .finally(function () {
             btn.disabled = false;

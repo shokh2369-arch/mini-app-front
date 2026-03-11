@@ -251,8 +251,8 @@
     /* Route highlight */
     .route-line-highlight { filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.5)); }
 
-    /* Kept for existing logic; hidden */
-    #status { display: none; }
+    /* Inline status for screen readers; errors shown in banner */
+    #status { position: absolute; left: -9999px; width: 1px; height: 1px; }
 
     /* Missing params overlay */
     #missing-params {
