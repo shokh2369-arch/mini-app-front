@@ -35,12 +35,14 @@ This document summarizes the **YettiQanot Haydovchi** (Trip Map Mini App) projec
 
 ```
 .
-├── README.md                 # Main docs: features, setup, API, troubleshooting
-├── BACKEND_API_UPDATE.md     # How to add rider phone/name to the Go backend
-├── PLAN_WHAT_WE_HAVE_DONE.md # This file
+├── README.md                   # Main docs: features, setup, API, troubleshooting
+├── BACKEND_API_UPDATE.md       # How to add rider phone/name to the Go backend
+├── BACKEND_COMPATIBILITY.md    # taxi-service-on-telegram: API contract, WebSocket, auth options
+├── BACKEND_FIX_401.md          # Fix 401 for Start/Cancel: open from Telegram or ENABLE_DRIVER_ID_HEADER
+├── PLAN_WHAT_WE_HAVE_DONE.md   # This file
 └── webapp/
-    ├── index.html            # Single page: layout, styles, map, client card, route info, fare panel, buttons
-    └── map.js                # Map, trip state, OSRM, WebSocket, fare display, API, event handlers
+    ├── index.html              # Single page: layout, styles, map, client card, route info, fare panel, buttons
+    └── map.js                  # Map, trip state, OSRM, WebSocket, fare/stats refresh, API, event handlers
 ```
 
 ### 3.2 Frontend (webapp)
@@ -52,7 +54,7 @@ This document summarizes the **YettiQanot Haydovchi** (Trip Map Mini App) projec
 - **Map container** — Touch-friendly (`touch-action: none`) for Leaflet pinch/pan.
 - **Route info** — Distance to client and ETA; loading state “Yo'nalish hisoblanmoqda...”.
 - **Bottom panel** — Sticky: fare (Narx), distance (Masofa), and action buttons.
-- **Action buttons** — “Mijozga yo'l”, “SAFARNI BOSHLASH”, “SAFARNI TUGATISH”, **“Safarni bekor qilish”** (cancel); shown/hidden by trip status.
+- **Action buttons** — “SAFARNI BOSHLASH”, “SAFARNI TUGATISH”, “Safarni bekor qilish” (cancel); shown/hidden by trip status. (Pickup navigation is automatic in WAITING; no “Mijozga yo'l” button.)
 - **Missing params overlay** — Shown when `trip_id` or `driver_id` is missing.
 - **UX** — Larger buttons (min-height 62px, 18px font), improved pickup marker (pin-style SVG), route line highlight (drop-shadow), touch-friendly zoom controls.
 - **Scripts** — Telegram Web App SDK, Leaflet 1.9.4 CSS/JS, `map.js`.
@@ -60,20 +62,19 @@ This document summarizes the **YettiQanot Haydovchi** (Trip Map Mini App) projec
 #### **map.js**
 - **Params** — `trip_id` from URL or Telegram `startParam` (e.g. `trip_123`); `driver_id` from URL.
 - **API** — `API_BASE`; `GET /trip/:id`, `POST /driver/location`, `POST /trip/start`, `POST /trip/finish`, **`POST /trip/cancel/driver`**.
-- **WebSocket** — Connect to `wss://<API_BASE host>/ws`; send `{ type: 'subscribe', trip_id, driver_id }`. Listen for: `driver_location_update` (lat, lng), `trip_started`, `trip_finished`, `trip_cancelled`. Update UI immediately; refetch trip on trip_started/trip_finished to get latest fare. Reconnect on close (3s delay).
+- **WebSocket** — Connect to `wss://<API_BASE host>/ws?trip_id=xxx&init_data=...` (query params; no post-connect subscribe). Listen for: `driver_location_update` (lat, lng), `trip_started`, `trip_finished`, `trip_cancelled`. On trip/location events call `refreshTrip()` so UI (including stats) stays in sync. Reconnect on close (3s delay).
 - **Map** — Leaflet, CARTO Light tiles, zoom control; default view Tashkent area.
 - **Markers** — Pickup (improved pin-style client SVG), driver (car emoji); popups.
-- **Routing** — OSRM for driving route (GeoJSON); draw polyline with highlight. **Route recalculation** when driver deviates >50 m from route (point-to-segment distance); throttle 5 s.
-- **Quick direction** — Dashed line driver→client when “Mijozga yo'l” is first used; then full OSRM route.
-- **Distance/ETA** — Instant: Haversine + ~25 km/h ETA; then OSRM distance and duration when route is loaded.
-- **Trip states** — WAITING / STARTED / FINISHED / **CANCELLED**; button visibility and status text per state.
-- **Fare (backend only)** — No frontend calculation. `parseFareFromTrip(data)` reads `fare`, `total_fare`, `amount`, `price`, `trip_fare` (or nested `fare.amount`/`fare.value`) and `distance_km`, `trip_distance`, `distance`. `updateFareDisplay(fare, distance)` sets fare and distance panel from API response. Called after every trip fetch and in `updateFromTrip(data)`.
+- **Routing** — OSRM for driving route (GeoJSON); draw polyline with highlight. **Route recalculation** when driver deviates >50 m; throttle 5 s. **Automatic pickup route** in WAITING: route driver→pickup drawn and redrawn on driver move (no manual “Mijozga yo'l”); top row “Mijozgacha” / “Yetib borish” shows distance/ETA to rider.
+- **Trip progress path** — In STARTED, green polyline (`tripProgressLine`) grows as driver moves; pickup route cleared.
+- **Distance/ETA (top)** — WAITING: “Mijozgacha” and “Yetib borish” from OSRM or Haversine. STARTED/FINISHED: top row set to “—”; only bottom stats are live.
+- **Trip states** — WAITING / STARTED / FINISHED / CANCELLED / CANCELLED_BY_DRIVER / CANCELLED_BY_RIDER; button visibility and status text per state.
+- **Fare and trip stats (backend only)** — Single source: `renderTripStats(trip)` uses `parseFareFromTrip(data)` and `updateFareDisplay(fare, distance)` for **Narx** and **Masofa**. No frontend fare calculation. **Live during STARTED:** `refreshTrip()` every 3 s (`startLiveTripRefresh`); **after FINISHED:** immediate `refreshTrip()` plus one delayed (1.5 s) to show final values. Stats refresh on initial load, after Start/Finish/Cancel, and on WebSocket trip_started / trip_finished / trip_cancelled.
 - **Client data** — Parse `rider_phone`, `rider_name`, `rider_info`, `pickup_address`, etc.; normalize phone for display and `tel:` link.
 - **Call** — “Qo'ng'iroq”: `Telegram.WebApp.openLink(tel:...)` or fallbacks.
-- **GPS** — **Ignore** updates when `accuracy > 50 m`. **Smooth** position using last 3 points (average). `watchPosition` + `getCurrentPosition`; send position to backend; update driver marker; in “Mijozga yo'l” mode map follows driver and client.
-- **Navigation/follow mode** — “Mijozga yo'l” enables follow mode; map auto-centers on driver and client; “Kuzatishni to'xtatish” exits follow mode.
+- **GPS** — **Ignore** updates when `accuracy > 50 m`. **Smooth** position using last 3 points (average). `watchPosition` + `getCurrentPosition`; send position to backend; update driver marker. In WAITING, map auto-fits driver and pickup; route redraws as driver moves.
 - **Vibration** — `navigator.vibrate(200)` when trip starts (after “SAFARNI BOSHLASH”).
-- **Event handlers** — Mijozga yo'l (toggle follow), Start trip, Finish trip, **Cancel trip**, call button.
+- **Event handlers** — Start trip, Finish trip, Cancel trip, call button. All trip actions use `refreshTrip()` (fetch + `updateFromTrip`) so stats stay in sync.
 
 ### 3.3 Backend contract (assumed)
 
@@ -84,9 +85,9 @@ This document summarizes the **YettiQanot Haydovchi** (Trip Map Mini App) projec
 | POST | `/trip/start` | `{ trip_id, driver_id }` | Start trip |
 | POST | `/trip/finish` | `{ trip_id, driver_id }` | Finish trip |
 | POST | `/trip/cancel/driver` | `{ trip_id, driver_id }` | Cancel trip (driver) |
-| WebSocket | `/ws` | — | Subscribe with `{ type: 'subscribe', trip_id, driver_id }`. Events: `driver_location_update` (lat, lng), `trip_started`, `trip_finished`, `trip_cancelled` |
+| WebSocket | `/ws?trip_id=xxx&init_data=...` | — | Query params for subscription. Events: `driver_location_update` (lat, lng), `trip_started`, `trip_finished`, `trip_cancelled` |
 
-Trip status values: `WAITING`, `STARTED`, `FINISHED`, `CANCELLED`.
+Trip status values: `WAITING`, `STARTED`, `FINISHED`, `CANCELLED`, `CANCELLED_BY_DRIVER`, `CANCELLED_BY_RIDER`.
 
 ### 3.4 Backend integration guide (BACKEND_API_UPDATE.md)
 
@@ -97,9 +98,10 @@ Trip status values: `WAITING`, `STARTED`, `FINISHED`, `CANCELLED`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_BASE` | `'https://taxi-service-on-telegram.onrender.com'` | Backend base URL (no trailing slash). WebSocket URL derived as `wss://<host>/ws`. |
+| `API_BASE` | `'https://taxi-service-on-telegram.onrender.com'` | Backend base URL (no trailing slash). WebSocket: `wss://<host>/ws?trip_id=...&init_data=...`. |
+| `LIVE_TRIP_POLL_INTERVAL_MS` | `3000` | Interval (ms) for `refreshTrip()` during STARTED so Narx/Masofa update from backend. |
 
-(Fare and tariff are no longer configured in the frontend; they come from the backend.)
+Fare and tariff come from the backend only. Stats refresh: `renderTripStats(trip)`, `refreshTrip()`, `startLiveTripRefresh()` / `stopLiveTripRefresh()`.
 
 ---
 
@@ -107,13 +109,12 @@ Trip status values: `WAITING`, `STARTED`, `FINISHED`, `CANCELLED`.
 
 1. Driver opens Mini App with `trip_id` and `driver_id` (URL or startParam).
 2. If params missing → “Reja va haydovchi bilan oching” overlay.
-3. App loads trip via GET `/trip/:id`; status banner and client card (phone, pickup, Qo'ng'iroq) update; **fare panel shows backend fare/distance**.
-4. Map shows driver and client markers; OSRM route to client; distance/ETA: “~X km” then exact when route loads. **Route recalculates** if driver deviates >50 m.
-5. “Mijozga yo'l” — Follow mode: dashed line then full route; **map auto-centers on driver and client**; distance/ETA update.
-6. “SAFARNI BOSHLASH” — Start trip; **vibration**; fare panel shows backend fare (refetched). No frontend fare calculation.
-7. “SAFARNI TUGATISH” — Finish trip; refetch trip to show final fare; buttons hidden.
-8. “Safarni bekor qilish” — Cancel trip (POST `/trip/cancel/driver`); status “Safar bekor qilindi”; buttons hidden.
-9. **WebSocket** delivers driver_location_update, trip_started, trip_finished, trip_cancelled; UI updates without polling.
+3. App loads trip via `refreshTrip()` (GET `/trip/:id` + `updateFromTrip`); status banner, client card (phone, pickup, Qo'ng'iroq), and **fare panel (Narx, Masofa)** show backend data.
+4. **WAITING:** Map shows driver and client markers; **pickup route (driver→client) draws automatically** and redraws as driver moves; “Mijozgacha” / “Yetib borish” show distance/ETA. Route recalculates if driver deviates >50 m.
+5. “SAFARNI BOSHLASH” — Start trip; **vibration**; pickup route cleared; **trip progress polyline** starts; **live stats:** every 3 s `refreshTrip()` so Narx/Masofa update from backend; top row set to “—”.
+6. “SAFARNI TUGATISH” — Finish trip; `refreshTrip()` then delayed (1.5 s) refresh for final fare/distance; buttons hidden; polling stopped.
+7. “Safarni bekor qilish” — Cancel trip (POST `/trip/cancel/driver`); `refreshTrip()`; status “Safar bekor qilindi”; buttons hidden; polling stopped.
+8. **WebSocket** delivers driver_location_update, trip_started, trip_finished, trip_cancelled; each triggers `refreshTrip()` so UI and stats stay in sync.
 
 ---
 
@@ -133,8 +134,10 @@ Trip status values: `WAITING`, `STARTED`, `FINISHED`, `CANCELLED`.
 
 | File | Purpose |
 |------|---------|
-| **README.md** | Features, structure, requirements, setup, API, config, tech stack, troubleshooting. |
+| **README.md** | Features, structure, requirements, setup, API, config, tech stack, troubleshooting (incl. 401 / ENABLE_DRIVER_ID_HEADER). |
 | **BACKEND_API_UPDATE.md** | Backend changes for rider phone/name and call button. |
+| **BACKEND_COMPATIBILITY.md** | taxi-service-on-telegram: API contract, WebSocket URL, when to add driver auth (initData or X-Driver-Id). |
+| **BACKEND_FIX_401.md** | Fix 401 for Start/Cancel: open app from Telegram or set ENABLE_DRIVER_ID_HEADER=true in backend. |
 | **PLAN_WHAT_WE_HAVE_DONE.md** | This plan: what was done, structure, flow. |
 
 ---
@@ -143,17 +146,19 @@ Trip status values: `WAITING`, `STARTED`, `FINISHED`, `CANCELLED`.
 
 - [x] Trip map with driver and client markers
 - [x] Road route (OSRM) from driver to pickup; **recalc when driver deviates >50 m**
-- [x] In-app navigation (“Mijozga yo'l”) with **follow mode** (map centers on driver)
-- [x] Instant then exact distance and ETA to client
+- [x] **Automatic pickup navigation** in WAITING (route draws and redraws; no “Mijozga yo'l” button)
+- [x] Distance/ETA to client (Mijozgacha / Yetib borish) in WAITING; “—” in STARTED/FINISHED
+- [x] **Trip progress polyline** (green path) during STARTED
 - [x] Start / Finish / **Cancel** trip with status messages
-- [x] **Fare and distance from backend only** (no frontend calculation)
+- [x] **Fare and distance from backend only**; **live stats** during STARTED (3 s refresh) and **final values** after FINISHED (immediate + delayed refresh)
+- [x] **renderTripStats(trip)**, **refreshTrip()**, **startLiveTripRefresh** / **stopLiveTripRefresh**
 - [x] Client card with phone and pickup; Qo'ng'iroq
-- [x] **WebSocket** for real-time updates (no polling)
+- [x] **WebSocket** (`/ws?trip_id=...&init_data=...`) for real-time updates; refreshTrip on trip events
 - [x] **GPS**: ignore accuracy >50 m; smooth with last 3 points
 - [x] **UX**: larger buttons, better pickup marker, route highlight, **vibration on trip start**
 - [x] Mobile-first UI and safe areas
 - [x] Params from URL and Telegram startParam
-- [x] Backend API contract and backend-update guide
+- [x] Backend API contract; BACKEND_COMPATIBILITY.md, BACKEND_FIX_401.md
 - [x] README and troubleshooting
 
 ---
