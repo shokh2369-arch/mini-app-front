@@ -22,8 +22,10 @@
   var wsReconnectTimer = null;
   var lastPickupRouteDrawTime = 0;
   var lastTripRefetchTime = 0;
+  var tripRefreshIntervalId = null;
   var PICKUP_ROUTE_REDRAW_INTERVAL_MS = 5000;
   var TRIP_REFETCH_INTERVAL_MS = 10000;
+  var LIVE_TRIP_POLL_INTERVAL_MS = 3000;
   var ROUTE_DEVIATION_METERS = 50;
   var GPS_ACCURACY_MAX_METERS = 50;
   var gpsHistory = [];
@@ -228,10 +230,10 @@
             }
           } else if (type === 'trip_started') {
             tripStatus = 'STARTED';
-            fetchTrip().then(updateFromTrip).catch(function () { updateFromTrip({ status: 'STARTED' }); });
+            refreshTrip().catch(function () { updateFromTrip({ status: 'STARTED' }); });
           } else if (type === 'trip_finished') {
             tripStatus = 'FINISHED';
-            fetchTrip().then(updateFromTrip).catch(function () { updateFromTrip({ status: 'FINISHED' }); });
+            refreshTrip().catch(function () { updateFromTrip({ status: 'FINISHED' }); });
           } else if (type === 'trip_cancelled') {
             var status = (payload.trip_status || payload.status || 'CANCELLED');
             if (status === 'CANCELLED_BY_RIDER' || status === 'CANCELLED_BY_DRIVER') {
@@ -239,7 +241,7 @@
             } else {
               tripStatus = 'CANCELLED';
             }
-            fetchTrip().then(updateFromTrip).catch(function () {
+            refreshTrip().catch(function () {
               updateFromTrip({ status: tripStatus });
             });
           }
@@ -512,6 +514,40 @@
     if (distanceEl) distanceEl.textContent = (distance != null && typeof distance === 'number') ? (distance.toFixed(1) + ' km') : '—';
   }
 
+  // Single source of truth for bottom stats panel (Narx, Masofa). Uses backend trip.distance_km and trip.fare.
+  function renderTripStats(trip) {
+    if (!trip || typeof trip !== 'object') return;
+    var fd = parseFareFromTrip(trip);
+    updateFareDisplay(fd.fare, fd.distance);
+  }
+
+  // Fetch trip from backend and apply full UI state. Use after start/finish, on WS events, and during live polling.
+  function refreshTrip() {
+    if (!tripId) return Promise.resolve();
+    return fetchTrip().then(function (data) {
+      updateFromTrip(data);
+    });
+  }
+
+  function startLiveTripRefresh() {
+    stopLiveTripRefresh();
+    if (tripStatus !== 'STARTED') return;
+    tripRefreshIntervalId = setInterval(function () {
+      if (tripStatus !== 'STARTED') {
+        stopLiveTripRefresh();
+        return;
+      }
+      refreshTrip().catch(function () {});
+    }, LIVE_TRIP_POLL_INTERVAL_MS);
+  }
+
+  function stopLiveTripRefresh() {
+    if (tripRefreshIntervalId != null) {
+      clearInterval(tripRefreshIntervalId);
+      tripRefreshIntervalId = null;
+    }
+  }
+
   function vibrateTripStart() {
     try {
       if (navigator.vibrate) navigator.vibrate(200);
@@ -618,8 +654,7 @@
       fitMapToMarkers();
     }
 
-    var fareData = parseFareFromTrip(data);
-    updateFareDisplay(fareData.fare, fareData.distance);
+    renderTripStats(data);
 
     if (tripStatus === 'WAITING') {
       setStatus('Olib ketish joyiga boring, so\'ng SAFARNI BOSHLASH ni bosing.');
@@ -644,16 +679,20 @@
       showButton('btnStart', false);
       showButton('btnFinish', true);
       showButton('btnCancel', false);
+      setText('routeDistance', '—');
+      setText('routeEta', '—');
       if (prevStatus !== 'STARTED') {
         clearPickupRoute();
         clearTripProgressLine();
         if (lastDriverLat != null && lastDriverLng != null) {
           appendTripProgressPoint(lastDriverLat, lastDriverLng);
         }
+        startLiveTripRefresh();
       }
       setRouteLoading(false);
       if (tripStartLat == null && lastDriverLat != null) startTripRecording();
     } else if (tripStatus === 'FINISHED') {
+      stopLiveTripRefresh();
       setStatus('Safar tugadi.');
       setRouteLoading(false);
       clearPickupRoute();
@@ -661,7 +700,9 @@
       showButton('btnFinish', false);
       showButton('btnCancel', false);
       stopLocationUpdates();
+      setTimeout(function () { refreshTrip().catch(function () {}); }, 1500);
     } else if (tripStatus === 'CANCELLED' || tripStatus === 'CANCELLED_BY_DRIVER' || tripStatus === 'CANCELLED_BY_RIDER') {
+      stopLiveTripRefresh();
       setStatus(tripStatus === 'CANCELLED_BY_RIDER' ? 'Mijoz bekor qildi.' : 'Safar bekor qilindi.');
       setRouteLoading(false);
       clearPickupRoute();
@@ -753,11 +794,8 @@
     setStatus('Reja yuklanmoqda…');
     connectWebSocket();
 
-    fetchTrip()
-      .then(function (data) {
-        updateFromTrip(data);
-        startLocationUpdates();
-      })
+    refreshTrip()
+      .then(function () { startLocationUpdates(); })
       .catch(function () {
         setStatus('Reja topilmadi');
       });
@@ -785,11 +823,7 @@
       startTrip()
         .then(function () {
           startTripRecording();
-          return fetchTrip()
-            .then(updateFromTrip)
-            .catch(function () {
-              updateFromTrip({ status: 'STARTED' });
-            });
+          return refreshTrip().catch(function () { updateFromTrip({ status: 'STARTED' }); });
         })
         .then(function () {
           tripStatus = 'STARTED';
@@ -812,12 +846,7 @@
       var btn = this;
       btn.disabled = true;
       finishTrip()
-        .then(function () {
-          return fetchTrip();
-        })
-        .then(function (data) {
-          updateFromTrip(data);
-        })
+        .then(function () { return refreshTrip(); })
         .catch(function () {
           updateFromTrip({ status: 'FINISHED' });
           btn.disabled = false;
@@ -830,12 +859,7 @@
         var btn = this;
         btn.disabled = true;
         cancelTrip()
-          .then(function () {
-            return fetchTrip();
-          })
-          .then(function (data) {
-            updateFromTrip(data);
-          })
+          .then(function () { return refreshTrip(); })
           .catch(function (err) {
             showBannerError('Safarni bekor qilish muvaffaqiyatsiz. Qaytadan urinib ko\'ring.');
             setTimeout(setStatusBanner, 6000);
