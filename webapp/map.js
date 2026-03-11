@@ -102,6 +102,19 @@
     if (el) el.style.display = show ? 'block' : 'none';
   }
 
+  // Headers for trip/start, trip/finish, trip/cancel: backend expects trip_id in body and driver from auth.
+  // Send Telegram WebApp initData for backend auth; optional X-Driver-Id if backend uses it for Mini App.
+  function apiHeaders() {
+    var h = { 'Content-Type': 'application/json' };
+    try {
+      if (typeof Telegram !== 'undefined' && Telegram.WebApp && Telegram.WebApp.initData) {
+        h['X-Telegram-Init-Data'] = Telegram.WebApp.initData;
+      }
+    } catch (e) {}
+    if (driverId != null) h['X-Driver-Id'] = String(driverId);
+    return h;
+  }
+
   function fetchTrip() {
     return fetch(API_BASE + '/trip/' + encodeURIComponent(tripId), { method: 'GET' })
       .then(function (r) {
@@ -113,41 +126,52 @@
   function sendDriverLocation(lat, lng) {
     return fetch(API_BASE + '/driver/location', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: apiHeaders(),
       body: JSON.stringify({ driver_id: driverId, lat: lat, lng: lng })
     });
   }
 
+  // Backend (taxi-service-on-telegram): POST body is { "trip_id": "..." }; driver comes from auth context.
   function startTrip() {
     return fetch(API_BASE + '/trip/start', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trip_id: tripId, driver_id: driverId })
+      headers: apiHeaders(),
+      body: JSON.stringify({ trip_id: String(tripId) })
     }).then(function (r) {
-      if (!r.ok) throw new Error('Start failed');
-      return r.json();
+      if (!r.ok) {
+        var e = new Error(r.status === 401 ? '401 Unauthorized' : 'Start failed');
+        e.status = r.status;
+        throw e;
+      }
+      return r.text().then(function (text) {
+        try { return text && text.length ? JSON.parse(text) : {}; } catch (e) { return {}; }
+      });
     });
   }
 
   function finishTrip() {
     return fetch(API_BASE + '/trip/finish', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trip_id: tripId, driver_id: driverId })
+      headers: apiHeaders(),
+      body: JSON.stringify({ trip_id: String(tripId) })
     }).then(function (r) {
       if (!r.ok) throw new Error('Finish failed');
-      return r.json();
+      return r.text().then(function (text) {
+        try { return text && text.length ? JSON.parse(text) : {}; } catch (e) { return {}; }
+      });
     });
   }
 
   function cancelTrip() {
     return fetch(API_BASE + '/trip/cancel/driver', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trip_id: tripId, driver_id: driverId })
+      headers: apiHeaders(),
+      body: JSON.stringify({ trip_id: String(tripId) })
     }).then(function (r) {
       if (!r.ok) throw new Error('Cancel failed');
-      return r.json();
+      return r.text().then(function (text) {
+        try { return text && text.length ? JSON.parse(text) : {}; } catch (e) { return {}; }
+      });
     });
   }
 
@@ -745,10 +769,25 @@
       startTrip()
         .then(function () {
           startTripRecording();
-          return fetchTrip().then(updateFromTrip);
+          return fetchTrip()
+            .then(updateFromTrip)
+            .catch(function () {
+              updateFromTrip({ status: 'STARTED' });
+            });
         })
-        .catch(function () {
+        .then(function () {
+          tripStatus = 'STARTED';
+          setStatusBanner();
+        })
+        .catch(function (err) {
           btn.disabled = false;
+          var msg = (err && err.message ? err.message : '') + (err && err.status ? ' ' + err.status : '');
+          if (msg.indexOf('401') !== -1 || msg.indexOf('Unauthorized') !== -1) {
+            setStatus('Haydovchi tasdiqlanmadi. Mini App ni Telegram orqali oching.');
+          } else {
+            setStatus('Safarni boshlash muvaffaqiyatsiz. Qaytadan urinib ko\'ring.');
+          }
+          if (typeof console !== 'undefined' && console.error) console.error('Start trip failed:', err);
         });
     });
 
