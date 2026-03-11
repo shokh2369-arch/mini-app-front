@@ -32,11 +32,24 @@
 
   var API_BASE = 'https://taxi-service-on-telegram.onrender.com';
 
+  // Backend (taxi-service-on-telegram) expects GET /ws?trip_id=xxx (and optionally &init_data= for auth).
   function getWsUrl() {
     var base = API_BASE;
-    if (base.indexOf('https://') === 0) return base.replace('https://', 'wss://') + '/ws';
-    if (base.indexOf('http://') === 0) return base.replace('http://', 'ws://') + '/ws';
-    return 'wss://' + base + '/ws';
+    var scheme = 'wss://';
+    if (base.indexOf('https://') === 0) {
+      base = base.replace('https://', '');
+      scheme = 'wss://';
+    } else if (base.indexOf('http://') === 0) {
+      base = base.replace('http://', '');
+      scheme = 'ws://';
+    }
+    var url = scheme + base + '/ws?trip_id=' + encodeURIComponent(tripId || '');
+    try {
+      if (typeof Telegram !== 'undefined' && Telegram.WebApp && Telegram.WebApp.initData) {
+        url += '&init_data=' + encodeURIComponent(Telegram.WebApp.initData);
+      }
+    } catch (e) {}
+    return url;
   }
 
   function getQueryParam(name) {
@@ -188,9 +201,7 @@
     var url = getWsUrl();
     try {
       ws = new WebSocket(url);
-      ws.onopen = function () {
-        ws.send(JSON.stringify({ type: 'subscribe', trip_id: tripId, driver_id: driverId }));
-      };
+      ws.onopen = function () { /* Backend subscribed via query trip_id= */ };
       ws.onmessage = function (ev) {
         try {
           var msg = JSON.parse(ev.data);
