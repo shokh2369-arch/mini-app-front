@@ -514,6 +514,20 @@
     if (distanceEl) distanceEl.textContent = (distance != null && typeof distance === 'number') ? (distance.toFixed(1) + ' km') : '—';
   }
 
+  function showFinalFareCenter(fare, distance) {
+    var overlay = document.getElementById('finalFareOverlay');
+    var amountEl = document.getElementById('finalFareAmount');
+    var distanceEl = document.getElementById('finalFareDistance');
+    if (amountEl) amountEl.textContent = (fare != null && typeof fare === 'number') ? (formatNumberSoM(Math.round(fare)) + " so'm") : '—';
+    if (distanceEl) distanceEl.textContent = (distance != null && typeof distance === 'number') ? (distance.toFixed(1) + ' km') : '';
+    if (overlay) overlay.classList.add('visible');
+  }
+
+  function hideFinalFareCenter() {
+    var overlay = document.getElementById('finalFareOverlay');
+    if (overlay) overlay.classList.remove('visible');
+  }
+
   // Single source of truth for bottom stats panel (Narx, Masofa). Uses backend trip.distance_km and trip.fare.
   function renderTripStats(trip) {
     if (!trip || typeof trip !== 'object') return;
@@ -657,6 +671,7 @@
     renderTripStats(data);
 
     if (tripStatus === 'WAITING') {
+      hideFinalFareCenter();
       setStatus('Olib ketish joyiga boring, so\'ng SAFARNI BOSHLASH ni bosing.');
       showButton('btnStart', true);
       showButton('btnFinish', false);
@@ -675,6 +690,7 @@
         setRouteLoading(false);
       }
     } else if (tripStatus === 'STARTED') {
+      hideFinalFareCenter();
       setStatus('Safar davom etmoqda. Tugagach SAFARNI TUGATISH ni bosing.');
       showButton('btnStart', false);
       showButton('btnFinish', true);
@@ -700,8 +716,11 @@
       showButton('btnFinish', false);
       showButton('btnCancel', false);
       stopLocationUpdates();
+      var fd = parseFareFromTrip(data);
+      showFinalFareCenter(fd.fare, fd.distance);
       setTimeout(function () { refreshTrip().catch(function () {}); }, 1500);
     } else if (tripStatus === 'CANCELLED' || tripStatus === 'CANCELLED_BY_DRIVER' || tripStatus === 'CANCELLED_BY_RIDER') {
+      hideFinalFareCenter();
       stopLiveTripRefresh();
       setStatus(tripStatus === 'CANCELLED_BY_RIDER' ? 'Mijoz bekor qildi.' : 'Safar bekor qilindi.');
       setRouteLoading(false);
