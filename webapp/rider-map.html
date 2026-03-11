@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
+  <title>Haydovchini kuzatish</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <style>
+    :root {
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --muted: #64748b;
+      --text: #0f172a;
+      --border: #e2e8f0;
+      --shadow: 0 10px 30px rgba(2, 6, 23, 0.08);
+      --blue: #2563eb;
+      --green: #16a34a;
+      --red: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      -webkit-tap-highlight-color: transparent;
+      color: var(--text);
+    }
+
+    #app {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      padding-top: env(safe-area-inset-top, 0);
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+
+    #statusBanner {
+      position: sticky;
+      top: 0;
+      z-index: 1200;
+      background: #0f172a;
+      color: #fff;
+      padding: 10px 14px;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+    #statusBanner span {
+      font-weight: 700;
+      color: #e2e8f0;
+      margin-left: 8px;
+      font-size: 14px;
+    }
+
+    #infoCard {
+      margin: 10px 12px 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .infoRow {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .infoRow .label { color: var(--muted); font-weight: 800; }
+    .infoRow .value { font-weight: 900; color: var(--text); }
+
+    #mapWrap {
+      flex: 1;
+      margin: 0 12px;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #e2e8f0;
+      position: relative;
+      touch-action: none;
+      -ms-touch-action: none;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      -ms-touch-action: none;
+    }
+
+    #routeInfo {
+      margin: 8px 12px 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 6px 18px rgba(2, 6, 23, 0.06);
+    }
+    #routeLoading {
+      display: none;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 800;
+    }
+    .routeRow {
+      display: flex;
+      justify-content: space-between;
+      font-size: 15px;
+      font-weight: 800;
+    }
+    .routeRow span { font-weight: 900; color: var(--text); }
+
+    #bottomPanel {
+      position: sticky;
+      bottom: 0;
+      z-index: 1300;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      box-shadow: 0 -8px 28px rgba(2, 6, 23, 0.12);
+      padding: 10px 12px;
+      padding-bottom: max(10px, env(safe-area-inset-bottom));
+    }
+    #actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .actionBtn {
+      width: 100%;
+      min-height: 62px;
+      padding: 16px 20px;
+      font-size: 18px;
+      font-weight: 950;
+      border: 0;
+      border-radius: 18px;
+      color: #fff;
+      cursor: pointer;
+      letter-spacing: 0.2px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .actionBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .actionBtn:active { transform: scale(0.98); }
+    .btnBlue { background: var(--blue); }
+    .btnRed { background: var(--red); }
+    .btnOrange { background: #ea580c; color: #fff; }
+
+    .leaflet-control-zoom { border: none !important; z-index: 1000 !important; }
+    .leaflet-control-zoom a {
+      width: 48px !important;
+      height: 48px !important;
+      line-height: 48px !important;
+      font-size: 24px !important;
+      border-radius: 14px !important;
+      margin: 6px !important;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+      cursor: pointer !important;
+      pointer-events: auto !important;
+    }
+    .leaflet-control-attribution { font-size: 10px; padding: 2px 6px; opacity: 0.85; }
+    .pickup-marker, .driver-marker { filter: drop-shadow(0 3px 10px rgba(0,0,0,0.3)); }
+    .driver-marker { font-size: 32px !important; }
+    .route-line-highlight { filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.5)); }
+
+    #missing-params {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #f8fafc;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+      z-index: 2000;
+      text-align: center;
+    }
+    #missing-params.visible { display: flex; flex-direction: column; }
+    #missing-params h2 { margin: 0 0 12px; font-size: 20px; color: #1e293b; }
+    #missing-params p { margin: 0 0 16px; color: #64748b; max-width: 360px; line-height: 1.5; }
+    #missing-params code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="missing-params" aria-live="polite">
+    <h2>Reja topilmadi</h2>
+    <p>URLda <code>trip_id</code> bo'lishi kerak.</p>
+    <p>Misol: <code>?trip_id=123</code></p>
+  </div>
+
+  <div id="app">
+    <div id="statusBanner">
+      Holat: <span id="statusText">Yuklanmoqda…</span>
+    </div>
+
+    <div id="infoCard">
+      <div class="infoRow">
+        <span class="label">🚗 Haydovchi</span>
+        <span class="value" id="driverInfo">—</span>
+      </div>
+      <div class="infoRow">
+        <span class="label">📍 Haydovchigacha</span>
+        <span class="value" id="routeDistance">—</span>
+      </div>
+      <div class="infoRow">
+        <span class="label">⏱ Yetib borish</span>
+        <span class="value" id="routeEta">—</span>
+      </div>
+    </div>
+
+    <div id="mapWrap">
+      <div id="map"></div>
+    </div>
+
+    <div id="routeInfo">
+      <div id="routeLoading">Yo'nalish hisoblanmoqda...</div>
+    </div>
+
+    <div id="bottomPanel">
+      <div id="actions">
+        <a id="btnCallDriver" href="#" class="actionBtn btnBlue" style="display:none; text-align:center; text-decoration:none; line-height:62px;">📞 Haydovchiga qo'ng'iroq</a>
+        <button id="btnCancelTrip" type="button" class="actionBtn btnOrange" style="display:none;">Safarni bekor qilish</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="rider-map.js"></script>
+</body>
+</html>
