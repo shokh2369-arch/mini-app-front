@@ -821,19 +821,30 @@
         setStatus('Reja topilmadi');
       });
 
+    function openPhoneDialer(telUrl) {
+      try {
+        if (typeof Telegram !== 'undefined' && Telegram.WebApp && typeof Telegram.WebApp.openLink === 'function') {
+          Telegram.WebApp.openLink(telUrl);
+          return;
+        }
+      } catch (e) {}
+      try {
+        var a = document.createElement('a');
+        a.href = telUrl;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch (e) {
+        window.location.href = telUrl;
+      }
+    }
     var callBtn = document.getElementById('btnCall');
     if (callBtn) {
       callBtn.addEventListener('click', function (e) {
         e.preventDefault();
         if (!clientPhone) return;
-        var telUrl = 'tel:' + phoneForTelLink(clientPhone);
-        try {
-          if (typeof Telegram !== 'undefined' && Telegram.WebApp && typeof Telegram.WebApp.openLink === 'function') {
-            Telegram.WebApp.openLink(telUrl);
-            return;
-          }
-        } catch (err) {}
-        window.location.href = telUrl;
+        openPhoneDialer('tel:' + phoneForTelLink(clientPhone));
       });
     }
 

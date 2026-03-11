@@ -405,6 +405,24 @@
         setText('statusText', 'Reja topilmadi');
       });
 
+    function openPhoneDialer(telUrl) {
+      try {
+        if (typeof Telegram !== 'undefined' && Telegram.WebApp && typeof Telegram.WebApp.openLink === 'function') {
+          Telegram.WebApp.openLink(telUrl);
+          return;
+        }
+      } catch (e) {}
+      try {
+        var a = document.createElement('a');
+        a.href = telUrl;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch (e) {
+        window.location.href = telUrl;
+      }
+    }
     var btnCall = document.getElementById('btnCallDriver');
     if (btnCall) {
       btnCall.addEventListener('click', function (e) {
@@ -413,14 +431,7 @@
         var tel = String(driverPhone).replace(/\D/g, '');
         if (tel.length === 9) tel = '998' + tel;
         if (tel.length >= 9) tel = '+' + tel;
-        var telUrl = 'tel:' + tel;
-        try {
-          if (typeof Telegram !== 'undefined' && Telegram.WebApp && typeof Telegram.WebApp.openLink === 'function') {
-            Telegram.WebApp.openLink(telUrl);
-            return;
-          }
-        } catch (err) {}
-        window.location.href = telUrl;
+        openPhoneDialer('tel:' + tel);
       });
     }
 
