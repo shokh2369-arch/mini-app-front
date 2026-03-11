@@ -9,9 +9,6 @@
   var followDriverMode = false;
   var locationWatchId = null;
   var tripStartLat, tripStartLng;
-  var lastFareLat, lastFareLng;
-  var totalDistanceKm = 0;
-  var currentFare = null;
   var routeDistanceKm = null;
   var routeEtaMin = null;
   var isRouteLoading = false;
@@ -23,14 +20,10 @@
   var lastRouteRecalcTime = 0;
   var ROUTE_DEVIATION_METERS = 50;
   var GPS_ACCURACY_MAX_METERS = 50;
-  var MIN_SPEED_KMH_FARE = 2;
   var gpsHistory = [];
   var GPS_HISTORY_SIZE = 3;
-  var lastFareTime = 0;
 
   var API_BASE = 'https://taxi-service-on-telegram.onrender.com';
-  var BASE_FARE = 4000;
-  var PER_KM_FARE = 1500;
 
   function getWsUrl() {
     var base = API_BASE;
@@ -175,12 +168,12 @@
             lastDriverLng = parseFloat(msg.lng);
             addDriverMarker(lastDriverLat, lastDriverLng);
             if (followDriverMode) fitMapToDriverAndClient();
-          } else if (type === 'trip_started') {
+          } else           if (type === 'trip_started') {
             tripStatus = 'STARTED';
-            updateFromTrip({ status: 'STARTED' });
+            fetchTrip().then(updateFromTrip).catch(function () { updateFromTrip({ status: 'STARTED' }); });
           } else if (type === 'trip_finished') {
             tripStatus = 'FINISHED';
-            updateFromTrip({ status: 'FINISHED' });
+            fetchTrip().then(updateFromTrip).catch(function () { updateFromTrip({ status: 'FINISHED' }); });
           } else if (type === 'trip_cancelled') {
             tripStatus = 'CANCELLED';
             updateFromTrip({ status: 'CANCELLED' });
@@ -407,20 +400,23 @@
     return R * c;
   }
 
-  function updateFareText() {
-    if (tripStatus !== 'STARTED' && tripStatus !== 'FINISHED') {
-      setText('fareValue', '—');
-      setText('fareDistance', '—');
-      return;
-    }
-    if (currentFare == null) {
-      setText('fareValue', '—');
-      setText('fareDistance', '—');
-      return;
-    }
-    var kmText = totalDistanceKm.toFixed(1);
-    setText('fareValue', formatNumberSoM(currentFare) + " so'm");
-    setText('fareDistance', kmText + ' km');
+  function parseFareFromTrip(data) {
+    if (!data || typeof data !== 'object') return { fare: null, distance: null };
+    var fare = data.fare != null ? data.fare : (data.total_fare != null ? data.total_fare : (data.amount != null ? data.amount : (data.price != null ? data.price : (data.trip_fare != null ? data.trip_fare : null))));
+    if (typeof fare === 'object' && fare !== null && (fare.amount != null || fare.value != null)) fare = fare.amount != null ? fare.amount : fare.value;
+    if (typeof fare === 'string') fare = parseFloat(fare);
+    if (fare != null && isNaN(fare)) fare = null;
+    var distance = data.distance_km != null ? data.distance_km : (data.trip_distance != null ? data.trip_distance : (data.distance != null ? data.distance : null));
+    if (typeof distance === 'string') distance = parseFloat(distance);
+    if (distance != null && isNaN(distance)) distance = null;
+    return { fare: fare, distance: distance };
+  }
+
+  function updateFareDisplay(fare, distance) {
+    var fareEl = document.getElementById('fareValue');
+    var distanceEl = document.getElementById('fareDistance');
+    if (fareEl) fareEl.textContent = (fare != null && typeof fare === 'number') ? (formatNumberSoM(Math.round(fare)) + " so'm") : '—';
+    if (distanceEl) distanceEl.textContent = (distance != null && typeof distance === 'number') ? (distance.toFixed(1) + ' km') : '—';
   }
 
   function vibrateTripStart() {
@@ -433,30 +429,7 @@
     if (lastDriverLat == null || lastDriverLng == null) return;
     tripStartLat = lastDriverLat;
     tripStartLng = lastDriverLng;
-    lastFareLat = lastDriverLat;
-    lastFareLng = lastDriverLng;
-    lastFareTime = Date.now();
-    totalDistanceKm = 0;
-    currentFare = BASE_FARE;
-    updateFareText();
     vibrateTripStart();
-  }
-
-  function addDistanceAndUpdateFare(lat, lng) {
-    if (lastFareLat == null || lastFareLng == null) return;
-    var km = haversineKm(lastFareLat, lastFareLng, lat, lng);
-    if (km < 1e-9) return;
-    var now = Date.now();
-    if (lastFareTime <= 0) lastFareTime = now;
-    var timeHours = (now - lastFareTime) / 3600000;
-    lastFareTime = now;
-    var speedKmh = timeHours > 0.0001 ? km / timeHours : 0;
-    if (speedKmh <= MIN_SPEED_KMH_FARE) return;
-    totalDistanceKm += km;
-    lastFareLat = lat;
-    lastFareLng = lng;
-    currentFare = BASE_FARE + Math.round(totalDistanceKm * PER_KM_FARE);
-    updateFareText();
   }
 
   function parseCoords(value) {
@@ -549,6 +522,9 @@
       fitMapToMarkers();
     }
 
+    var fareData = parseFareFromTrip(data);
+    updateFareDisplay(fareData.fare, fareData.distance);
+
     if (tripStatus === 'WAITING') {
       setStatus('Olib ketish joyiga boring, so\'ng SAFARNI BOSHLASH ni bosing.');
       updateTrackButtonLabel();
@@ -557,9 +533,6 @@
       showButton('btnFinish', false);
       showButton('btnCancel', true);
       tripStartLat = null;
-      lastFareLat = null;
-      totalDistanceKm = 0;
-      currentFare = null;
       routeDistanceKm = null;
       routeEtaMin = null;
       setText('routeDistance', '—');
@@ -581,7 +554,6 @@
       } else {
         setRouteLoading(false);
       }
-      updateFareText();
     } else if (tripStatus === 'STARTED') {
       setStatus('Safar davom etmoqda. Tugagach SAFARNI TUGATISH ni bosing.');
       followDriverMode = false;
@@ -593,13 +565,11 @@
       routeLayer = null;
       setRouteLoading(false);
       if (tripStartLat == null && lastDriverLat != null) startTripRecording();
-      updateFareText();
     } else if (tripStatus === 'FINISHED') {
       setStatus('Safar tugadi.');
       followDriverMode = false;
       updateTrackButtonLabel();
       setRouteLoading(false);
-      updateFareText();
       showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', false);
@@ -701,7 +671,6 @@
       });
       if (tripStatus === 'WAITING') checkRouteDeviationAndRecalc(lat, lng);
       if (followDriverMode) updateMapFollowDriver(lat, lng);
-      if (tripStatus === 'STARTED') addDistanceAndUpdateFare(lat, lng);
     }
     function onErr() {}
     if (navigator.geolocation) {
@@ -788,9 +757,13 @@
       btn.disabled = true;
       finishTrip()
         .then(function () {
-          updateFromTrip({ status: 'FINISHED' });
+          return fetchTrip();
+        })
+        .then(function (data) {
+          updateFromTrip(data);
         })
         .catch(function () {
+          updateFromTrip({ status: 'FINISHED' });
           btn.disabled = false;
         });
     });
