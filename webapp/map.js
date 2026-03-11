@@ -1,7 +1,11 @@
 (function () {
   'use strict';
 
-  var map, pickupMarker, driverMarker, routeLayer, quickDirectionLayer;
+  var map, pickupMarker, driverMarker;
+  var pickupRouteLine = null;
+  var pickupHelperLine = null;
+  var tripProgressLine = null;
+  var tripProgressPoints = [];
   var tripId, driverId;
   var tripStatus = '';
   var pickupLat, pickupLng;
@@ -17,7 +21,10 @@
   var pickupLabel = null;
   var ws = null;
   var wsReconnectTimer = null;
-  var lastRouteRecalcTime = 0;
+  var lastPickupRouteDrawTime = 0;
+  var lastTripRefetchTime = 0;
+  var PICKUP_ROUTE_REDRAW_INTERVAL_MS = 5000;
+  var TRIP_REFETCH_INTERVAL_MS = 10000;
   var ROUTE_DEVIATION_METERS = 50;
   var GPS_ACCURACY_MAX_METERS = 50;
   var gpsHistory = [];
@@ -93,7 +100,8 @@
     if (tripStatus === 'WAITING') holat = 'Mijozga ketilyapti';
     else if (tripStatus === 'STARTED') holat = 'Safar boshlandi';
     else if (tripStatus === 'FINISHED') holat = 'Safar tugadi';
-    else if (tripStatus === 'CANCELLED') holat = 'Safar bekor qilindi';
+    else if (tripStatus === 'CANCELLED' || tripStatus === 'CANCELLED_BY_DRIVER') holat = 'Safar bekor qilindi';
+    else if (tripStatus === 'CANCELLED_BY_RIDER') holat = 'Mijoz bekor qildi';
     setText('statusText', holat);
   }
 
@@ -187,20 +195,34 @@
         try {
           var msg = JSON.parse(ev.data);
           var type = msg.type || msg.event;
+          var payload = msg.payload || msg;
           if (type === 'driver_location_update' && msg.lat != null && msg.lng != null) {
             lastDriverLat = parseFloat(msg.lat);
             lastDriverLng = parseFloat(msg.lng);
             addDriverMarker(lastDriverLat, lastDriverLng);
-            if (followDriverMode) fitMapToDriverAndClient();
-          } else           if (type === 'trip_started') {
+            if (tripStatus === 'WAITING') {
+              drawRemainingPickupRoute();
+              if (followDriverMode) fitMapToDriverAndClient();
+            } else if (tripStatus === 'STARTED') {
+              appendTripProgressPoint(lastDriverLat, lastDriverLng);
+              maybeRefetchTripForFare();
+            }
+          } else if (type === 'trip_started') {
             tripStatus = 'STARTED';
             fetchTrip().then(updateFromTrip).catch(function () { updateFromTrip({ status: 'STARTED' }); });
           } else if (type === 'trip_finished') {
             tripStatus = 'FINISHED';
             fetchTrip().then(updateFromTrip).catch(function () { updateFromTrip({ status: 'FINISHED' }); });
           } else if (type === 'trip_cancelled') {
-            tripStatus = 'CANCELLED';
-            updateFromTrip({ status: 'CANCELLED' });
+            var status = (payload.trip_status || payload.status || 'CANCELLED');
+            if (status === 'CANCELLED_BY_RIDER' || status === 'CANCELLED_BY_DRIVER') {
+              tripStatus = status;
+            } else {
+              tripStatus = 'CANCELLED';
+            }
+            fetchTrip().then(updateFromTrip).catch(function () {
+              updateFromTrip({ status: tripStatus });
+            });
           }
         } catch (e) {}
       };
@@ -274,10 +296,21 @@
     }).addTo(map).bindPopup('Haydovchi');
   }
 
-  function drawQuickDirectionLine() {
+  function clearPickupRoute() {
+    if (pickupHelperLine && map) {
+      map.removeLayer(pickupHelperLine);
+      pickupHelperLine = null;
+    }
+    if (pickupRouteLine && map) {
+      map.removeLayer(pickupRouteLine);
+      pickupRouteLine = null;
+    }
+  }
+
+  function drawPickupHelperLine() {
     if (!map || !pickupLat || !pickupLng || lastDriverLat == null || lastDriverLng == null) return;
-    if (quickDirectionLayer) map.removeLayer(quickDirectionLayer);
-    quickDirectionLayer = L.polyline([[lastDriverLat, lastDriverLng], [pickupLat, pickupLng]], {
+    if (pickupHelperLine) map.removeLayer(pickupHelperLine);
+    pickupHelperLine = L.polyline([[lastDriverLat, lastDriverLng], [pickupLat, pickupLng]], {
       color: '#2563eb',
       weight: 4,
       opacity: 0.7,
@@ -287,11 +320,26 @@
     }).addTo(map);
   }
 
-  function removeQuickDirectionLine() {
-    if (quickDirectionLayer && map) {
-      map.removeLayer(quickDirectionLayer);
-      quickDirectionLayer = null;
+  function clearTripProgressLine() {
+    if (tripProgressLine && map) {
+      map.removeLayer(tripProgressLine);
+      tripProgressLine = null;
     }
+    tripProgressPoints = [];
+  }
+
+  function appendTripProgressPoint(lat, lng) {
+    if (!map || tripStatus !== 'STARTED') return;
+    tripProgressPoints.push([lat, lng]);
+    if (tripProgressLine && map) map.removeLayer(tripProgressLine);
+    if (tripProgressPoints.length < 2) return;
+    tripProgressLine = L.polyline(tripProgressPoints, {
+      color: '#16a34a',
+      weight: 6,
+      opacity: 0.9,
+      lineCap: 'round',
+      lineJoin: 'round'
+    }).addTo(map);
   }
 
   function getLatLng(ll) {
@@ -303,8 +351,8 @@
   }
 
   function distanceFromPointToRouteKm(lat, lng) {
-    if (!routeLayer) return Infinity;
-    var latlngs = routeLayer.getLatLngs();
+    if (!pickupRouteLine) return Infinity;
+    var latlngs = pickupRouteLine.getLatLngs();
     if (!latlngs || latlngs.length < 2) return Infinity;
     var minDist = Infinity;
     for (var i = 0; i < latlngs.length - 1; i++) {
@@ -337,44 +385,43 @@
     return haversineKm(lat, lng, latM, lngM);
   }
 
-  function checkRouteDeviationAndRecalc(lat, lng) {
-    if (tripStatus !== 'WAITING' || !routeLayer || !pickupLat || !pickupLng) return;
+  function drawRemainingPickupRoute() {
+    if (tripStatus !== 'WAITING' || !pickupLat || !pickupLng || lastDriverLat == null || lastDriverLng == null || !map) return;
     var now = Date.now();
-    if (now - lastRouteRecalcTime < 5000) return;
-    var distKm = distanceFromPointToRouteKm(lat, lng);
-    if (distKm * 1000 <= ROUTE_DEVIATION_METERS) return;
-    lastRouteRecalcTime = now;
+    if (now - lastPickupRouteDrawTime < PICKUP_ROUTE_REDRAW_INTERVAL_MS) return;
+    lastPickupRouteDrawTime = now;
     setRouteLoading(true);
-    fetchRoute(lat, lng, pickupLat, pickupLng).then(function (json) {
+    clearPickupRoute();
+    fetchRoute(lastDriverLat, lastDriverLng, pickupLat, pickupLng).then(function (json) {
       if (json.routes && json.routes[0]) {
         var route = json.routes[0];
-        if (route.geometry && route.geometry.coordinates) {
-          drawRoute(route.geometry.coordinates);
+        if (route.geometry && route.geometry.coordinates && route.geometry.coordinates.length >= 2) {
+          var latLngs = route.geometry.coordinates.map(function (c) { return [c[1], c[0]]; });
+          pickupRouteLine = L.polyline(latLngs, {
+            color: '#2563eb',
+            weight: 7,
+            opacity: 0.95,
+            lineCap: 'round',
+            lineJoin: 'round',
+            className: 'route-line-highlight'
+          }).addTo(map);
+          routeDistanceKm = route.distance / 1000.0;
+          routeEtaMin = route.duration / 60.0;
+          setText('routeDistance', formatKm(routeDistanceKm));
+          setText('routeEta', formatEtaMin(routeEtaMin));
+          if (followDriverMode) fitMapToDriverAndClient();
+          else map.fitBounds(pickupRouteLine.getBounds(), { padding: [50, 50], maxZoom: 15 });
         }
-        routeDistanceKm = route.distance / 1000.0;
-        routeEtaMin = route.duration / 60.0;
-        setText('routeDistance', formatKm(routeDistanceKm));
-        setText('routeEta', formatEtaMin(routeEtaMin));
-        if (followDriverMode) fitMapToDriverAndClient();
       }
       setRouteLoading(false);
     }).catch(function () { setRouteLoading(false); });
   }
 
-  function drawRoute(geojsonCoords) {
-    removeQuickDirectionLine();
-    if (routeLayer) map.removeLayer(routeLayer);
-    if (!geojsonCoords || geojsonCoords.length < 2) return;
-    var latLngs = geojsonCoords.map(function (c) { return [c[1], c[0]]; });
-    routeLayer = L.polyline(latLngs, {
-      color: '#2563eb',
-      weight: 7,
-      opacity: 0.95,
-      lineCap: 'round',
-      lineJoin: 'round',
-      className: 'route-line-highlight'
-    }).addTo(map);
-    if (!followDriverMode) map.fitBounds(routeLayer.getBounds(), { padding: [50, 50], maxZoom: 15 });
+  function checkRouteDeviationAndRecalc(lat, lng) {
+    if (tripStatus !== 'WAITING' || !pickupRouteLine || !pickupLat || !pickupLng) return;
+    var distKm = distanceFromPointToRouteKm(lat, lng);
+    if (distKm * 1000 <= ROUTE_DEVIATION_METERS) return;
+    drawRemainingPickupRoute();
   }
 
   function setRouteLoading(loading) {
@@ -500,6 +547,7 @@
   }
 
   function updateFromTrip(data) {
+    var prevStatus = tripStatus;
     tripStatus = data.status || '';
     setStatusBanner();
 
@@ -563,18 +611,8 @@
       setText('routeEta', '—');
       if (driver && pickup) {
         showInstantDistanceAndEta();
-        fetchRoute(driver[0], driver[1], pickup[0], pickup[1]).then(function (json) {
-          if (json.routes && json.routes[0] && json.routes[0].geometry && json.routes[0].geometry.coordinates) {
-            drawRoute(json.routes[0].geometry.coordinates);
-          }
-          if (json.routes && json.routes[0]) {
-            routeDistanceKm = json.routes[0].distance / 1000.0;
-            routeEtaMin = json.routes[0].duration / 60.0;
-            setText('routeDistance', formatKm(routeDistanceKm));
-            setText('routeEta', formatEtaMin(routeEtaMin));
-          }
-          setRouteLoading(false);
-        }).catch(function () { setRouteLoading(false); });
+        lastPickupRouteDrawTime = 0;
+        drawRemainingPickupRoute();
       } else {
         setRouteLoading(false);
       }
@@ -585,8 +623,13 @@
       showButton('btnStart', false);
       showButton('btnFinish', true);
       showButton('btnCancel', false);
-      if (routeLayer) map.removeLayer(routeLayer);
-      routeLayer = null;
+      if (prevStatus !== 'STARTED') {
+        clearPickupRoute();
+        clearTripProgressLine();
+        if (lastDriverLat != null && lastDriverLng != null) {
+          appendTripProgressPoint(lastDriverLat, lastDriverLng);
+        }
+      }
       setRouteLoading(false);
       if (tripStartLat == null && lastDriverLat != null) startTripRecording();
     } else if (tripStatus === 'FINISHED') {
@@ -594,15 +637,18 @@
       followDriverMode = false;
       updateTrackButtonLabel();
       setRouteLoading(false);
+      clearPickupRoute();
       showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', false);
       showButton('btnCancel', false);
       stopLocationUpdates();
-    } else if (tripStatus === 'CANCELLED') {
-      setStatus('Safar bekor qilindi.');
+    } else if (tripStatus === 'CANCELLED' || tripStatus === 'CANCELLED_BY_DRIVER' || tripStatus === 'CANCELLED_BY_RIDER') {
+      setStatus(tripStatus === 'CANCELLED_BY_RIDER' ? 'Mijoz bekor qildi.' : 'Safar bekor qilindi.');
       followDriverMode = false;
       setRouteLoading(false);
+      clearPickupRoute();
+      clearTripProgressLine();
       showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', false);
@@ -613,27 +659,13 @@
 
   function ensureRouteToClient() {
     if (!pickupLat || !pickupLng || !map) return;
-    var fromLat = lastDriverLat;
-    var fromLng = lastDriverLng;
-    if (fromLat == null || fromLng == null) return;
-    if (routeLayer) {
+    if (lastDriverLat == null || lastDriverLng == null) return;
+    if (pickupRouteLine) {
       fitMapToDriverAndClient();
       return;
     }
-    fetchRoute(fromLat, fromLng, pickupLat, pickupLng).then(function (json) {
-      if (json.routes && json.routes[0]) {
-        var route = json.routes[0];
-        if (route.geometry && route.geometry.coordinates) {
-          drawRoute(route.geometry.coordinates);
-        }
-        routeDistanceKm = route.distance / 1000.0;
-        routeEtaMin = route.duration / 60.0;
-        setText('routeDistance', formatKm(routeDistanceKm));
-        setText('routeEta', formatEtaMin(routeEtaMin));
-        if (followDriverMode) fitMapToDriverAndClient();
-      }
-      setRouteLoading(false);
-    }).catch(function () { setRouteLoading(false); });
+    lastPickupRouteDrawTime = 0;
+    drawRemainingPickupRoute();
   }
 
   function startInAppNavigation() {
@@ -642,14 +674,17 @@
     setStatus('Joylashuvingiz mijozga nisbatan kuzatilmoqda');
     updateTrackButtonLabel();
     showInstantDistanceAndEta();
-    if (!routeLayer) drawQuickDirectionLine();
+    if (!pickupRouteLine) drawPickupHelperLine();
     fitMapToDriverAndClient();
     ensureRouteToClient();
   }
 
   function stopInAppNavigation() {
     followDriverMode = false;
-    removeQuickDirectionLine();
+    if (pickupHelperLine && map) {
+      map.removeLayer(pickupHelperLine);
+      pickupHelperLine = null;
+    }
     setStatus('Olib ketish joyiga boring, so\'ng SAFARNI BOSHLASH ni bosing.');
     updateTrackButtonLabel();
   }
@@ -678,6 +713,17 @@
     fitMapToDriverAndClient();
   }
 
+  function maybeRefetchTripForFare() {
+    if (tripStatus !== 'STARTED') return;
+    var now = Date.now();
+    if (now - lastTripRefetchTime < TRIP_REFETCH_INTERVAL_MS) return;
+    lastTripRefetchTime = now;
+    fetchTrip().then(function (data) {
+      var fd = parseFareFromTrip(data);
+      updateFareDisplay(fd.fare, fd.distance);
+    }).catch(function () {});
+  }
+
   function startLocationUpdates() {
     if (locationWatchId != null) return;
     function onPos(position) {
@@ -693,8 +739,14 @@
       sendDriverLocation(lat, lng).then(function () {
         addDriverMarker(lat, lng);
       });
-      if (tripStatus === 'WAITING') checkRouteDeviationAndRecalc(lat, lng);
-      if (followDriverMode) updateMapFollowDriver(lat, lng);
+      if (tripStatus === 'WAITING') {
+        checkRouteDeviationAndRecalc(lat, lng);
+        drawRemainingPickupRoute();
+        if (followDriverMode) updateMapFollowDriver(lat, lng);
+      } else if (tripStatus === 'STARTED') {
+        appendTripProgressPoint(lat, lng);
+        maybeRefetchTripForFare();
+      }
     }
     function onErr() {}
     if (navigator.geolocation) {
@@ -814,7 +866,13 @@
         btn.disabled = true;
         cancelTrip()
           .then(function () {
-            tripStatus = 'CANCELLED';
+            return fetchTrip();
+          })
+          .then(function (data) {
+            updateFromTrip(data);
+          })
+          .catch(function () {
+            tripStatus = 'CANCELLED_BY_DRIVER';
             setStatusBanner();
             setStatus('Safar bekor qilindi.');
             showButton('btnTrackToClient', false);
@@ -823,7 +881,7 @@
             showButton('btnCancel', false);
             stopLocationUpdates();
           })
-          .catch(function () {
+          .finally(function () {
             btn.disabled = false;
           });
       });
