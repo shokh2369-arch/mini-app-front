@@ -10,7 +10,6 @@
   var tripStatus = '';
   var pickupLat, pickupLng;
   var lastDriverLat, lastDriverLng;
-  var followDriverMode = false;
   var locationWatchId = null;
   var tripStartLat, tripStartLng;
   var routeDistanceKm = null;
@@ -222,7 +221,7 @@
             addDriverMarker(lastDriverLat, lastDriverLng);
             if (tripStatus === 'WAITING') {
               drawRemainingPickupRoute();
-              if (followDriverMode) fitMapToDriverAndClient();
+              fitMapToDriverAndClient();
             } else if (tripStatus === 'STARTED') {
               appendTripProgressPoint(lastDriverLat, lastDriverLng);
               maybeRefetchTripForFare();
@@ -417,6 +416,10 @@
         var route = json.routes[0];
         if (route.geometry && route.geometry.coordinates && route.geometry.coordinates.length >= 2) {
           var latLngs = route.geometry.coordinates.map(function (c) { return [c[1], c[0]]; });
+          if (pickupHelperLine && map) {
+            map.removeLayer(pickupHelperLine);
+            pickupHelperLine = null;
+          }
           pickupRouteLine = L.polyline(latLngs, {
             color: '#2563eb',
             weight: 7,
@@ -429,8 +432,7 @@
           routeEtaMin = route.duration / 60.0;
           setText('routeDistance', formatKm(routeDistanceKm));
           setText('routeEta', formatEtaMin(routeEtaMin));
-          if (followDriverMode) fitMapToDriverAndClient();
-          else map.fitBounds(pickupRouteLine.getBounds(), { padding: [50, 50], maxZoom: 15 });
+          fitMapToDriverAndClient();
         }
       }
       setRouteLoading(false);
@@ -610,7 +612,9 @@
       lastDriverLng = driver[1];
       addDriverMarker(driver[0], driver[1]);
     }
-    if (pickup && (driver || pickupMarker) && (driverMarker || driver) && !followDriverMode) {
+    if (pickup && (driver || pickupMarker) && (driverMarker || driver) && tripStatus === 'WAITING') {
+      fitMapToDriverAndClient();
+    } else if (pickup && (driver || pickupMarker) && (driverMarker || driver)) {
       fitMapToMarkers();
     }
 
@@ -619,8 +623,6 @@
 
     if (tripStatus === 'WAITING') {
       setStatus('Olib ketish joyiga boring, so\'ng SAFARNI BOSHLASH ni bosing.');
-      updateTrackButtonLabel();
-      showButton('btnTrackToClient', true);
       showButton('btnStart', true);
       showButton('btnFinish', false);
       showButton('btnCancel', true);
@@ -633,13 +635,12 @@
         showInstantDistanceAndEta();
         lastPickupRouteDrawTime = 0;
         drawRemainingPickupRoute();
+        if (!pickupRouteLine) drawPickupHelperLine();
       } else {
         setRouteLoading(false);
       }
     } else if (tripStatus === 'STARTED') {
       setStatus('Safar davom etmoqda. Tugagach SAFARNI TUGATISH ni bosing.');
-      followDriverMode = false;
-      showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', true);
       showButton('btnCancel', false);
@@ -654,64 +655,22 @@
       if (tripStartLat == null && lastDriverLat != null) startTripRecording();
     } else if (tripStatus === 'FINISHED') {
       setStatus('Safar tugadi.');
-      followDriverMode = false;
-      updateTrackButtonLabel();
       setRouteLoading(false);
       clearPickupRoute();
-      showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', false);
       showButton('btnCancel', false);
       stopLocationUpdates();
     } else if (tripStatus === 'CANCELLED' || tripStatus === 'CANCELLED_BY_DRIVER' || tripStatus === 'CANCELLED_BY_RIDER') {
       setStatus(tripStatus === 'CANCELLED_BY_RIDER' ? 'Mijoz bekor qildi.' : 'Safar bekor qilindi.');
-      followDriverMode = false;
       setRouteLoading(false);
       clearPickupRoute();
       clearTripProgressLine();
-      showButton('btnTrackToClient', false);
       showButton('btnStart', false);
       showButton('btnFinish', false);
       showButton('btnCancel', false);
       stopLocationUpdates();
     }
-  }
-
-  function ensureRouteToClient() {
-    if (!pickupLat || !pickupLng || !map) return;
-    if (lastDriverLat == null || lastDriverLng == null) return;
-    if (pickupRouteLine) {
-      fitMapToDriverAndClient();
-      return;
-    }
-    lastPickupRouteDrawTime = 0;
-    drawRemainingPickupRoute();
-  }
-
-  function startInAppNavigation() {
-    if (pickupLat == null || pickupLng == null) return;
-    followDriverMode = true;
-    setStatus('Joylashuvingiz mijozga nisbatan kuzatilmoqda');
-    updateTrackButtonLabel();
-    showInstantDistanceAndEta();
-    if (!pickupRouteLine) drawPickupHelperLine();
-    fitMapToDriverAndClient();
-    ensureRouteToClient();
-  }
-
-  function stopInAppNavigation() {
-    followDriverMode = false;
-    if (pickupHelperLine && map) {
-      map.removeLayer(pickupHelperLine);
-      pickupHelperLine = null;
-    }
-    setStatus('Olib ketish joyiga boring, so\'ng SAFARNI BOSHLASH ni bosing.');
-    updateTrackButtonLabel();
-  }
-
-  function updateTrackButtonLabel() {
-    var btn = document.getElementById('btnTrackToClient');
-    if (btn && tripStatus === 'WAITING') btn.textContent = followDriverMode ? 'Kuzatishni to\'xtatish' : 'Mijozga yo\'l';
   }
 
   function fitMapToDriverAndClient() {
@@ -724,13 +683,6 @@
     } else if (bounds.length === 1) {
       map.setView(bounds[0], 15);
     }
-  }
-
-  function updateMapFollowDriver(lat, lng) {
-    if (!followDriverMode || !map) return;
-    lastDriverLat = lat;
-    lastDriverLng = lng;
-    fitMapToDriverAndClient();
   }
 
   function maybeRefetchTripForFare() {
@@ -762,7 +714,7 @@
       if (tripStatus === 'WAITING') {
         checkRouteDeviationAndRecalc(lat, lng);
         drawRemainingPickupRoute();
-        if (followDriverMode) updateMapFollowDriver(lat, lng);
+        fitMapToDriverAndClient();
       } else if (tripStatus === 'STARTED') {
         appendTripProgressPoint(lat, lng);
         maybeRefetchTripForFare();
@@ -826,14 +778,6 @@
         } catch (err) {}
       });
     }
-
-    document.getElementById('btnTrackToClient').addEventListener('click', function () {
-      if (followDriverMode) {
-        stopInAppNavigation();
-      } else {
-        startInAppNavigation();
-      }
-    });
 
     document.getElementById('btnStart').addEventListener('click', function () {
       var btn = this;
