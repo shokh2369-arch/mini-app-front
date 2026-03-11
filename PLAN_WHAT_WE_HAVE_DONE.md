@@ -1,6 +1,6 @@
 # Full plan — What we have done
 
-This document summarizes the **YettiQanot Haydovchi** (Trip Map Mini App) project: scope, deliverables, and implementation details.
+This document summarizes the **YettiQanot** taxi Mini App project: **Driver** and **Rider** apps, scope, deliverables, and implementation details.
 
 ---
 
@@ -8,9 +8,9 @@ This document summarizes the **YettiQanot Haydovchi** (Trip Map Mini App) projec
 
 | Item | Description |
 |------|-------------|
-| **Name** | YettiQanot Haydovchi — Trip Map Mini App |
-| **Type** | Telegram Mini App (single-page web app) |
-| **Audience** | Taxi drivers (haydovchilar) |
+| **Name** | YettiQanot — Driver Mini App + Rider Mini App |
+| **Type** | Telegram Mini Apps (single-page web apps) |
+| **Audience** | Taxi drivers (haydovchilar) and riders (mijozlar) |
 | **Language** | Uzbek (Latin) for all UI text |
 | **Tech** | Vanilla JS, plain CSS, Leaflet, OSRM, Telegram WebApp SDK; no frameworks |
 
@@ -26,6 +26,7 @@ This document summarizes the **YettiQanot Haydovchi** (Trip Map Mini App) projec
 6. **Client card** — Show client phone and pickup; one-tap call (Qo'ng'iroq).
 7. **Real-time updates** — WebSocket for trip and driver location updates instead of polling.
 8. **Mobile-first** — Large touch targets, sticky panels, safe areas, vibration on trip start; works in Telegram’s in-app browser.
+9. **Rider Mini App** — Track driver live on map; driver → pickup route (OSRM); driver info, distance, ETA; call driver; cancel trip (rider).
 
 ---
 
@@ -41,11 +42,13 @@ This document summarizes the **YettiQanot Haydovchi** (Trip Map Mini App) projec
 ├── BACKEND_FIX_401.md          # Fix 401 for Start/Cancel: open from Telegram or ENABLE_DRIVER_ID_HEADER
 ├── PLAN_WHAT_WE_HAVE_DONE.md   # This file
 └── webapp/
-    ├── index.html              # Single page: layout, styles, map, client card, route info, fare panel, buttons
-    └── map.js                  # Map, trip state, OSRM, WebSocket, fare/stats refresh, API, event handlers
+    ├── index.html              # Driver app: layout, map, client card, route info, fare panel, buttons
+    ├── map.js                  # Driver app: trip state, OSRM, WebSocket, fare/stats refresh, API
+    ├── rider-map.html          # Rider app: track driver, info panel, map, call/cancel buttons
+    └── rider-map.js            # Rider app: trip fetch, map, WebSocket, OSRM route, call driver, cancel trip
 ```
 
-### 3.2 Frontend (webapp)
+### 3.2 Frontend — Driver app (webapp)
 
 #### **index.html**
 - **Layout** — Full-screen app shell with safe-area insets.
@@ -76,7 +79,26 @@ This document summarizes the **YettiQanot Haydovchi** (Trip Map Mini App) projec
 - **Vibration** — `navigator.vibrate(200)` when trip starts (after “SAFARNI BOSHLASH”).
 - **Event handlers** — Start trip, Finish trip, Cancel trip, call button. All trip actions use `refreshTrip()` (fetch + `updateFromTrip`) so stats stay in sync.
 
-### 3.3 Backend contract (assumed)
+### 3.3 Frontend — Rider app (webapp)
+
+#### **rider-map.html**
+- **URL** — `rider-map.html?trip_id=123` (or Telegram `startParam` e.g. `trip_123`).
+- **Status banner** — “Holat: Haydovchi yo'lda” / “Safar boshlandi” / “Safar tugadi” / “Safar bekor qilindi”.
+- **Info card** — Haydovchi (name/car), Haydovchigacha (distance to driver), Yetib borish (ETA). Same styling as driver app (cards, large text).
+- **Map** — Leaflet, CARTO Light tiles, zoom; rider pickup marker (pin SVG), driver marker (car emoji).
+- **Bottom panel** — “Haydovchiga qo'ng'iroq” (tel: link), “Safarni bekor qilish”; hidden when trip finished/cancelled.
+- **Missing params** — Overlay when `trip_id` missing.
+
+#### **rider-map.js**
+- **Params** — `trip_id` from URL or Telegram `startParam`.
+- **API** — `API_BASE`; `GET /trip/:id`, **`POST /trip/cancel/rider`** (body `{ trip_id }`, header `X-Telegram-Init-Data` if present).
+- **WebSocket** — `wss://<host>/ws?trip_id=xxx&init_data=...`. Events: `driver_location_update` (update driver marker + redraw route), `trip_started`, `trip_finished`, `trip_cancelled` (update status, hide buttons, clear route).
+- **Route** — OSRM driver → rider pickup; blue polyline; distance/ETA in info card; Haversine fallback if OSRM fails.
+- **Call driver** — `tel:<driver_phone>`; in Telegram `Telegram.WebApp.openLink('tel:...')`. Uses `driver_phone`, `driver_info.phone` from GET /trip.
+- **Cancel trip** — POST `/trip/cancel/rider`; then refetch trip and apply state; show “Safar bekor qilindi” when cancelled.
+- **Finish/cancel messages** — “Safar tugadi” or “Safar bekor qilindi”; buttons hidden; WebSocket disconnected.
+
+### 3.4 Backend contract (assumed)
 
 | Method | Endpoint | Body | Purpose |
 |--------|----------|------|---------|
@@ -85,16 +107,17 @@ This document summarizes the **YettiQanot Haydovchi** (Trip Map Mini App) projec
 | POST | `/trip/start` | `{ trip_id, driver_id }` | Start trip |
 | POST | `/trip/finish` | `{ trip_id, driver_id }` | Finish trip |
 | POST | `/trip/cancel/driver` | `{ trip_id, driver_id }` | Cancel trip (driver) |
+| POST | `/trip/cancel/rider` | `{ trip_id }` | Cancel trip (rider); rider from auth or initData. |
 | WebSocket | `/ws?trip_id=xxx&init_data=...` | — | Query params for subscription. Events: `driver_location_update` (lat, lng), `trip_started`, `trip_finished`, `trip_cancelled` |
 
-Trip status values: `WAITING`, `STARTED`, `FINISHED`, `CANCELLED`, `CANCELLED_BY_DRIVER`, `CANCELLED_BY_RIDER`.
+Trip status values: `WAITING`, `STARTED`, `FINISHED`, `CANCELLED`, `CANCELLED_BY_DRIVER`, `CANCELLED_BY_RIDER`. Rider app needs GET /trip with `driver`, `driver_phone`, `driver_name`, `driver_car` (or `driver_info`) for info panel and call.
 
-### 3.4 Backend integration guide (BACKEND_API_UPDATE.md)
+### 3.5 Backend integration guide (BACKEND_API_UPDATE.md)
 
 - **Goal** — Show client phone and enable “Qo'ng'iroq”.
 - **Content** — Add `RiderName` and `RiderPhone` to trip response; load from DB. Frontend already supports `rider_phone` / `rider_name` and fallbacks.
 
-### 3.5 Configuration (map.js)
+### 3.6 Configuration (map.js, rider-map.js)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -118,7 +141,20 @@ Fare and tariff come from the backend only. Stats refresh: `renderTripStats(trip
 
 ---
 
-## 5. Technical choices
+## 5. Rider flow (implemented)
+
+1. Rider opens **rider-map.html** with `trip_id` (e.g. `?trip_id=123` or Telegram startParam).
+2. If `trip_id` missing → “Reja topilmadi” overlay.
+3. App loads trip via GET `/trip/:id`; status banner and **info card** (driver name/car, distance to driver, ETA) update; **rider pickup** and **driver** markers on map.
+4. **WebSocket** connects with `?trip_id=xxx`; on **driver_location_update** driver marker moves and **route (driver → pickup)** redraws via OSRM; distance and ETA refresh.
+5. “Haydovchiga qo'ng'iroq” — Opens `tel:<driver_phone>` (or Telegram openLink).
+6. “Safarni bekor qilish” — POST `/trip/cancel/rider`; refetch trip; show “Safar bekor qilindi”; hide buttons.
+7. On **trip_finished** → “Safar tugadi”; hide buttons; clear route; disconnect WebSocket.
+8. On **trip_cancelled** → “Safar bekor qilindi”; same cleanup.
+
+---
+
+## 6. Technical choices
 
 - **No build step** — Plain HTML/CSS/JS; easy to host on any static host (e.g. Vercel, Netlify).
 - **Leaflet + CARTO** — Lightweight map; readable tiles.
@@ -130,7 +166,7 @@ Fare and tariff come from the backend only. Stats refresh: `renderTripStats(trip
 
 ---
 
-## 6. Documentation delivered
+## 7. Documentation delivered
 
 | File | Purpose |
 |------|---------|
@@ -142,7 +178,7 @@ Fare and tariff come from the backend only. Stats refresh: `renderTripStats(trip
 
 ---
 
-## 7. Summary checklist
+## 8. Summary checklist
 
 - [x] Trip map with driver and client markers
 - [x] Road route (OSRM) from driver to pickup; **recalc when driver deviates >50 m**
@@ -160,6 +196,7 @@ Fare and tariff come from the backend only. Stats refresh: `renderTripStats(trip
 - [x] Params from URL and Telegram startParam
 - [x] Backend API contract; BACKEND_COMPATIBILITY.md, BACKEND_FIX_401.md
 - [x] README and troubleshooting
+- [x] **Rider Mini App** (rider-map.html, rider-map.js): track driver on map, OSRM route driver→pickup, driver info/distance/ETA, call driver, cancel trip (POST /trip/cancel/rider), WebSocket for driver_location_update / trip_started / trip_finished / trip_cancelled, “Safar tugadi” / “Safar bekor qilindi”
 
 ---
 
