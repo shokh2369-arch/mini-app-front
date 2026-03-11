@@ -83,7 +83,9 @@
   function fetchTrip() {
     return fetch(API_BASE + '/trip/' + encodeURIComponent(tripId), { method: 'GET' })
       .then(function (r) {
-        if (!r.ok) throw new Error('Trip not found');
+        if (!r.ok) {
+          return r.text().then(function () { throw new Error(r.status === 404 ? 'Trip not found' : 'Request failed'); });
+        }
         return r.json();
       });
   }

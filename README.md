@@ -133,6 +133,7 @@ Detailed steps and code snippets are in **[BACKEND_API_UPDATE.md](BACKEND_API_UP
 
 ## Troubleshooting
 
+- **"404: NOT_FOUND" / Code: NOT_FOUND** — You are opening the **wrong URL**. That screen is the backend’s JSON error page. Open the **Mini App** URL so the HTML loads first, e.g. **Rider:** `https://your-domain.com/webapp/rider-map.html?trip_id=123` or **Driver:** `https://your-domain.com/webapp/index.html?trip_id=123&driver_id=456`. The backend API base (e.g. `https://api.example.com`) is for API calls only; the webapp (rider-map.html, index.html) must be served by your frontend host or by the backend’s static route (e.g. `/webapp/`). If the trip truly doesn’t exist, the in-app message will be “Reja topilmadi”.
 - **"Reja va haydovchi bilan oching" / missing params** — The app needs `trip_id` and `driver_id` in the URL (or `startParam` for `trip_id`). Ensure the bot sends the correct Mini App link with these params.
 - **"Safarni boshlash" / "Safarni bekor qilish" returns 401 or "Haydovchi tasdiqlanmadi"** — The backend needs to recognize the driver. **Option 1:** Open the Mini App from Telegram (tap the link the bot sends) so `initData` is sent and validated. **Option 2:** In the backend env set `ENABLE_DRIVER_ID_HEADER=true` so the backend accepts the `X-Driver-Id` header when initData is missing. See [BACKEND_FIX_401.md](BACKEND_FIX_401.md).
 - **Map or route not loading** — Check that the page is served over HTTPS and that the backend is reachable; check the browser console for failed requests.
