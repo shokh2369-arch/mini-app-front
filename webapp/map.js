@@ -229,9 +229,9 @@
             } else if (tripStatus === 'STARTED') {
               appendTripProgressPoint(lastDriverLat, lastDriverLng);
               maybeRefetchTripForFare();
+              fitMapToDriver();
             }
           } else if (type === 'trip_started') {
-            tripStatus = 'STARTED';
             refreshTrip().catch(function () { updateFromTrip({ status: 'STARTED' }); });
           } else if (type === 'trip_finished') {
             tripStatus = 'FINISHED';
@@ -328,6 +328,18 @@
       map.removeLayer(pickupRouteLine);
       pickupRouteLine = null;
     }
+  }
+
+  function removePickupMarker() {
+    if (pickupMarker && map) {
+      map.removeLayer(pickupMarker);
+      pickupMarker = null;
+    }
+  }
+
+  function fitMapToDriver() {
+    if (!map || tripStatus !== 'STARTED' || lastDriverLat == null || lastDriverLng == null) return;
+    map.setView([lastDriverLat, lastDriverLng], map.getZoom(), { animate: true, duration: 0.5 });
   }
 
   function drawPickupHelperLine() {
@@ -657,7 +669,9 @@
     if (pickup) {
       pickupLat = pickup[0];
       pickupLng = pickup[1];
-      addPickupMarker(pickup[0], pickup[1]);
+      if (tripStatus !== 'STARTED' && tripStatus !== 'FINISHED') {
+        addPickupMarker(pickup[0], pickup[1]);
+      }
     }
     if (driver && (driver[0] !== 0 || driver[1] !== 0)) {
       lastDriverLat = driver[0];
@@ -674,6 +688,7 @@
 
     if (tripStatus === 'WAITING') {
       hideFinalFareCenter();
+      setVisible('routeInfo', true);
       setStatus('Olib ketish joyiga boring, so\'ng SAFARNI BOSHLASH ni bosing.');
       showButton('btnStart', true);
       showButton('btnFinish', false);
@@ -699,8 +714,10 @@
       showButton('btnCancel', false);
       setText('routeDistance', '—');
       setText('routeEta', '—');
+      setVisible('routeInfo', false);
+      clearPickupRoute();
+      removePickupMarker();
       if (prevStatus !== 'STARTED') {
-        clearPickupRoute();
         clearTripProgressLine();
         if (lastDriverLat != null && lastDriverLng != null) {
           appendTripProgressPoint(lastDriverLat, lastDriverLng);
@@ -780,6 +797,7 @@
       } else if (tripStatus === 'STARTED') {
         appendTripProgressPoint(lat, lng);
         maybeRefetchTripForFare();
+        fitMapToDriver();
       }
     }
     function onErr() {}
