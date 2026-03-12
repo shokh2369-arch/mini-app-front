@@ -319,7 +319,7 @@
     }).addTo(map).bindPopup('Mijoz / Olib ketish joyi');
   }
 
-  var DRIVER_CAR_ICON_URL = 'images/driver-car.png';
+  var DRIVER_CAR_ICON_URL = 'images/driver-car-transparent.png';
 
   function addDriverMarker(lat, lng) {
     if (driverMarker) map.removeLayer(driverMarker);
