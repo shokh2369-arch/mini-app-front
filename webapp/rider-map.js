@@ -192,8 +192,8 @@
       icon: L.divIcon({
         className: 'pickup-marker',
         html: '<img src=\"' + RIDER_ICON_URL + '\" alt=\"Sizning joyingiz\" class=\"rider-pin-icon\"/>',
-        iconSize: [28, 36],
-        iconAnchor: [14, 36]
+        iconSize: [70, 70],
+        iconAnchor: [35, 70]
       })
     }).addTo(map).bindPopup('Sizning joyingiz');
   }
@@ -217,9 +217,9 @@
     driverMarker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'driver-marker',
-        html: '<span class="driver-car-icon-wrap" style="display:inline-block;width:64px;height:64px;transform:rotate(' + deg + 'deg)"><img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/></span>',
-        iconSize: [64, 64],
-        iconAnchor: [32, 32]
+        html: '<span class="driver-car-icon-wrap" style="display:inline-block;width:70px;height:70px;transform:rotate(' + deg + 'deg)"><img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/></span>',
+        iconSize: [70, 70],
+        iconAnchor: [35, 35]
       })
     }).addTo(map).bindPopup('Haydovchi');
   }
