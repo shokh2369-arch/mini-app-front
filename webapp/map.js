@@ -319,7 +319,7 @@
     }).addTo(map).bindPopup('Mijoz / Olib ketish joyi');
   }
 
-  var DRIVER_CAR_ICON_URL = 'https://thumbs.dreamstime.com/b/modern-white-car-viewed-above-against-minimalist-geometric-background-bold-grey-lines-creating-clean-dynamic-look-top-350200377.jpg?w=200';
+  var DRIVER_CAR_ICON_URL = 'images/driver-car.png';
 
   function addDriverMarker(lat, lng) {
     if (driverMarker) map.removeLayer(driverMarker);
