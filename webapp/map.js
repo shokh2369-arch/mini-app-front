@@ -301,23 +301,16 @@
     }, 400);
   }
 
-  function getClientIconSvg() {
-    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 52" width="40" height="52">' +
-      '<path d="M20 0C12.3 0 6 6.3 6 14c0 5.2 3.2 9.6 7.6 11.4L6 52h28l-7.6-26.6c4.4-1.8 7.6-6.2 7.6-11.4C34 6.3 27.7 0 20 0z" fill="#2563eb" stroke="#1e40af" stroke-width="1.5"/>' +
-      '<circle cx="20" cy="14" r="8" fill="#fff"/>' +
-      '<circle cx="20" cy="14" r="5" fill="#1e293b"/>' +
-      '<path d="M12 24h16v6c0 2-1.5 4-4 4h-8c-2.5 0-4-2-4-4v-6z" fill="#fff"/>' +
-      '</svg>';
-  }
+  var RIDER_ICON_URL = 'images/rider-pin-transparent.png';
 
   function addPickupMarker(lat, lng) {
     if (pickupMarker) map.removeLayer(pickupMarker);
     pickupMarker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'pickup-marker client-marker',
-        html: getClientIconSvg(),
-        iconSize: [40, 52],
-        iconAnchor: [20, 52]
+        html: '<img src=\"' + RIDER_ICON_URL + '\" alt=\"Mijoz\" class=\"rider-pin-icon\"/>',
+        iconSize: [28, 36],
+        iconAnchor: [14, 36]
       })
     }).addTo(map).bindPopup('Mijoz / Olib ketish joyi');
   }
