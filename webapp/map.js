@@ -91,7 +91,9 @@
 
   function setVisible(id, visible) {
     var el = document.getElementById(id);
-    if (el) el.style.display = visible ? 'block' : 'none';
+    if (!el) return;
+    if (id === 'routeInfo') el.style.display = visible ? 'flex' : 'none';
+    else el.style.display = visible ? 'block' : 'none';
   }
 
   function normalizePhoneDisplay(phone) {
@@ -115,12 +117,13 @@
 
   function setStatusBanner() {
     var holat = 'Yuklanmoqda…';
-    if (tripStatus === 'WAITING') holat = 'Mijozga ketilyapti';
-    else if (tripStatus === 'STARTED') holat = 'Safar boshlandi';
-    else if (tripStatus === 'FINISHED') holat = 'Safar tugadi';
-    else if (tripStatus === 'CANCELLED' || tripStatus === 'CANCELLED_BY_DRIVER') holat = 'Safar bekor qilindi';
-    else if (tripStatus === 'CANCELLED_BY_RIDER') holat = 'Mijoz bekor qildi';
-    setText('statusText', holat);
+    var dot = '🟢';
+    if (tripStatus === 'WAITING') { holat = 'Mijozga ketilyapti'; dot = '🟢'; }
+    else if (tripStatus === 'STARTED') { holat = 'Safar boshlandi'; dot = '🟢'; }
+    else if (tripStatus === 'FINISHED') { holat = 'Safar tugadi'; dot = '⚪'; }
+    else if (tripStatus === 'CANCELLED' || tripStatus === 'CANCELLED_BY_DRIVER') { holat = 'Safar bekor qilindi'; dot = '🔴'; }
+    else if (tripStatus === 'CANCELLED_BY_RIDER') { holat = 'Mijoz bekor qildi'; dot = '🔴'; }
+    setText('statusText', dot + ' ' + holat);
   }
 
   function showButton(id, show) {
@@ -334,9 +337,9 @@
     driverMarker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'driver-marker',
-        html: '<span class="driver-car-icon-wrap" style="display:inline-block;width:70px;height:70px;transform:rotate(' + deg + 'deg)"><img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/></span>',
-        iconSize: [70, 70],
-        iconAnchor: [35, 35]
+        html: '<span class="driver-car-icon-wrap" style="display:inline-block;width:76px;height:76px;transform:rotate(' + deg + 'deg)"><img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/></span>',
+        iconSize: [76, 76],
+        iconAnchor: [38, 38]
       })
     }).addTo(map).bindPopup('Haydovchi');
   }
@@ -369,8 +372,8 @@
     if (pickupHelperLine) map.removeLayer(pickupHelperLine);
     pickupHelperLine = L.polyline([[lastDriverLat, lastDriverLng], [pickupLat, pickupLng]], {
       color: '#2563eb',
-      weight: 4,
-      opacity: 0.7,
+      weight: 7,
+      opacity: 0.9,
       dashArray: '8,8',
       lineCap: 'round',
       lineJoin: 'round'
@@ -392,7 +395,7 @@
     if (tripProgressPoints.length < 2) return;
     tripProgressLine = L.polyline(tripProgressPoints, {
       color: '#16a34a',
-      weight: 6,
+      weight: 7,
       opacity: 0.9,
       lineCap: 'round',
       lineJoin: 'round'
@@ -461,7 +464,7 @@
           pickupRouteLine = L.polyline(latLngs, {
             color: '#2563eb',
             weight: 7,
-            opacity: 0.95,
+            opacity: 0.9,
             lineCap: 'round',
             lineJoin: 'round',
             className: 'route-line-highlight'
@@ -487,6 +490,8 @@
   function setRouteLoading(loading) {
     isRouteLoading = loading;
     setVisible('routeLoading', loading);
+    var routeInfo = document.getElementById('routeInfo');
+    if (routeInfo) routeInfo.classList.toggle('loading', !!loading);
   }
 
   function showInstantDistanceAndEta() {
