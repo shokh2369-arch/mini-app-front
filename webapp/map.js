@@ -289,6 +289,13 @@
       maxZoom: 19
     }).addTo(map);
     L.control.zoom({ position: 'topright' }).addTo(map);
+    if (typeof map.invalidateSize === 'function') map.invalidateSize();
+    setTimeout(function () {
+      if (map && typeof map.invalidateSize === 'function') map.invalidateSize();
+    }, 100);
+    setTimeout(function () {
+      if (map && typeof map.invalidateSize === 'function') map.invalidateSize();
+    }, 400);
   }
 
   function getClientIconSvg() {
