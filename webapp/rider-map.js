@@ -439,11 +439,13 @@
     if (btnCancel) {
       btnCancel.addEventListener('click', function () {
         var btn = this;
+        var prevText = btn.textContent;
         btn.disabled = true;
+        btn.textContent = '…';
         cancelTrip()
-          .then(function () { return fetchTrip(); })
-          .then(function (data) {
-            applyTripData(data);
+          .then(function () {
+            applyTripData({ status: 'CANCELLED' });
+            fetchTrip().then(function (data) { applyTripData(data); }).catch(function () {});
           })
           .catch(function (err) {
             setText('statusText', 'Safarni bekor qilish muvaffaqiyatsiz. Qaytadan urinib ko\'ring.');
@@ -451,6 +453,7 @@
           })
           .finally(function () {
             btn.disabled = false;
+            btn.textContent = prevText;
           });
       });
     }

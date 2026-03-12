@@ -875,18 +875,20 @@
 
     document.getElementById('btnStart').addEventListener('click', function () {
       var btn = this;
+      var prevText = btn.textContent;
       btn.disabled = true;
+      btn.textContent = '…';
       startTrip()
         .then(function () {
           startTripRecording();
-          return refreshTrip().catch(function () { updateFromTrip({ status: 'STARTED' }); });
-        })
-        .then(function () {
           tripStatus = 'STARTED';
           setStatusBanner();
+          updateFromTrip({ status: 'STARTED' });
+          refreshTrip().then(function (data) { if (data) updateFromTrip(data); }).catch(function () {});
         })
         .catch(function (err) {
           btn.disabled = false;
+          btn.textContent = prevText;
           var msg = (err && err.message ? err.message : '') + (err && err.status ? ' ' + err.status : '');
           if (msg.indexOf('401') !== -1 || msg.indexOf('Unauthorized') !== -1) {
             showBannerError('Haydovchi tasdiqlanmadi. Mini App ni Telegram orqali oching.');
@@ -900,12 +902,18 @@
 
     document.getElementById('btnFinish').addEventListener('click', function () {
       var btn = this;
+      var prevText = btn.textContent;
       btn.disabled = true;
+      btn.textContent = '…';
       finishTrip()
-        .then(function () { return refreshTrip(); })
-        .catch(function () {
+        .then(function () {
           updateFromTrip({ status: 'FINISHED' });
+          refreshTrip().then(function (data) { if (data) updateFromTrip(data); }).catch(function () {});
+        })
+        .catch(function () {
           btn.disabled = false;
+          btn.textContent = prevText;
+          updateFromTrip({ status: 'FINISHED' });
         });
     });
 
@@ -913,9 +921,14 @@
     if (btnCancel) {
       btnCancel.addEventListener('click', function () {
         var btn = this;
+        var prevText = btn.textContent;
         btn.disabled = true;
+        btn.textContent = '…';
         cancelTrip()
-          .then(function () { return refreshTrip(); })
+          .then(function () {
+            updateFromTrip({ status: 'CANCELLED' });
+            refreshTrip().then(function (data) { if (data) updateFromTrip(data); }).catch(function () {});
+          })
           .catch(function (err) {
             showBannerError('Safarni bekor qilish muvaffaqiyatsiz. Qaytadan urinib ko\'ring.');
             setTimeout(setStatusBanner, 6000);
@@ -923,6 +936,7 @@
           })
           .finally(function () {
             btn.disabled = false;
+            btn.textContent = prevText;
           });
       });
     }
