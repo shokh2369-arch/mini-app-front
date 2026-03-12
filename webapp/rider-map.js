@@ -7,6 +7,7 @@
   var tripStatus = '';
   var pickupLat, pickupLng;
   var driverLat, driverLng;
+  var driverBearingDeg = 0;
   var driverPhone = null;
   var driverName = null;
   var driverCarInfo = null;
@@ -117,7 +118,14 @@
           if (type === 'driver_location_update' && msg.lat != null && msg.lng != null) {
             var newLat = parseFloat(msg.lat);
             var newLng = parseFloat(msg.lng);
-            var bearing = (driverLat != null && driverLng != null) ? calculateBearing(driverLat, driverLng, newLat, newLng) : 0;
+            var bearing = driverBearingDeg || 0;
+            if (driverLat != null && driverLng != null) {
+              var movedKm = haversineKm(driverLat, driverLng, newLat, newLng);
+              if (movedKm >= 0.005) {
+                bearing = calculateBearing(driverLat, driverLng, newLat, newLng);
+              }
+            }
+            driverBearingDeg = bearing;
             addDriverMarker(newLat, newLng, bearing);
             driverLat = newLat;
             driverLng = newLng;
@@ -193,7 +201,7 @@
         className: 'pickup-marker',
         html: '<img src=\"' + RIDER_ICON_URL + '\" alt=\"Sizning joyingiz\" class=\"rider-pin-icon\"/>',
         iconSize: [70, 70],
-        iconAnchor: [35, 70]
+        iconAnchor: [35, 35]
       })
     }).addTo(map).bindPopup('Sizning joyingiz');
   }
@@ -217,9 +225,9 @@
     driverMarker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'driver-marker',
-        html: '<span class="driver-car-icon-wrap" style="display:inline-block;width:70px;height:70px;transform:rotate(' + deg + 'deg)"><img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/></span>',
-        iconSize: [70, 70],
-        iconAnchor: [35, 35]
+        html: '<span class="driver-car-icon-wrap" style="display:inline-block;width:76px;height:76px;transform:rotate(' + deg + 'deg)"><img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/></span>',
+        iconSize: [76, 76],
+        iconAnchor: [38, 38]
       })
     }).addTo(map).bindPopup('Haydovchi');
   }
@@ -357,7 +365,14 @@
     if (driver && (driver[0] !== 0 || driver[1] !== 0)) {
       var newDriverLat = driver[0];
       var newDriverLng = driver[1];
-      var bearing = (driverLat != null && driverLng != null) ? calculateBearing(driverLat, driverLng, newDriverLat, newDriverLng) : 0;
+      var bearing = driverBearingDeg || 0;
+      if (driverLat != null && driverLng != null) {
+        var movedKm = haversineKm(driverLat, driverLng, newDriverLat, newDriverLng);
+        if (movedKm >= 0.005) {
+          bearing = calculateBearing(driverLat, driverLng, newDriverLat, newDriverLng);
+        }
+      }
+      driverBearingDeg = bearing;
       addDriverMarker(newDriverLat, newDriverLng, bearing);
       driverLat = newDriverLat;
       driverLng = newDriverLng;

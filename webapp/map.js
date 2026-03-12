@@ -10,6 +10,7 @@
   var tripStatus = '';
   var pickupLat, pickupLng;
   var lastDriverLat, lastDriverLng;
+  var lastDriverBearingDeg = 0;
   var locationWatchId = null;
   var tripStartLat, tripStartLng;
   var routeDistanceKm = null;
@@ -225,7 +226,14 @@
           if (type === 'driver_location_update' && msg.lat != null && msg.lng != null) {
             var newLat = parseFloat(msg.lat);
             var newLng = parseFloat(msg.lng);
-            var bearing = (lastDriverLat != null && lastDriverLng != null) ? calculateBearing(lastDriverLat, lastDriverLng, newLat, newLng) : 0;
+            var bearing = lastDriverBearingDeg || 0;
+            if (lastDriverLat != null && lastDriverLng != null) {
+              var movedKm = haversineKm(lastDriverLat, lastDriverLng, newLat, newLng);
+              if (movedKm >= 0.005) { // >= 5 meters
+                bearing = calculateBearing(lastDriverLat, lastDriverLng, newLat, newLng);
+              }
+            }
+            lastDriverBearingDeg = bearing;
             addDriverMarker(newLat, newLng, bearing);
             lastDriverLat = newLat;
             lastDriverLng = newLng;
@@ -313,7 +321,7 @@
         className: 'pickup-marker client-marker',
         html: '<img src=\"' + RIDER_ICON_URL + '\" alt=\"Mijoz\" class=\"rider-pin-icon\"/>',
         iconSize: [70, 70],
-        iconAnchor: [35, 70]
+        iconAnchor: [35, 35]
       })
     }).addTo(map).bindPopup('Mijoz / Olib ketish joyi');
   }
@@ -703,6 +711,7 @@
     if (driver && (driver[0] !== 0 || driver[1] !== 0)) {
       lastDriverLat = driver[0];
       lastDriverLng = driver[1];
+      lastDriverBearingDeg = 0;
       addDriverMarker(driver[0], driver[1], 0);
     }
     if (pickup && (driver || pickupMarker) && (driverMarker || driver) && tripStatus === 'WAITING') {
@@ -812,9 +821,16 @@
       var smoothed = smoothGpsPosition(lat, lng);
       lat = smoothed.lat;
       lng = smoothed.lng;
-      var bearing = (lastDriverLat != null && lastDriverLng != null) ? calculateBearing(lastDriverLat, lastDriverLng, lat, lng) : 0;
+      var bearing = lastDriverBearingDeg || 0;
+      if (lastDriverLat != null && lastDriverLng != null) {
+        var movedKm = haversineKm(lastDriverLat, lastDriverLng, lat, lng);
+        if (movedKm >= 0.005) { // >= 5 meters
+          bearing = calculateBearing(lastDriverLat, lastDriverLng, lat, lng);
+        }
+      }
       lastDriverLat = lat;
       lastDriverLng = lng;
+      lastDriverBearingDeg = bearing;
       sendDriverLocation(lat, lng).then(function () {
         addDriverMarker(lat, lng, bearing);
       });
