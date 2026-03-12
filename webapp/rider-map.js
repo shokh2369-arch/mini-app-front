@@ -115,9 +115,12 @@
           var type = msg.type || msg.event;
           var payload = msg.payload || msg;
           if (type === 'driver_location_update' && msg.lat != null && msg.lng != null) {
-            driverLat = parseFloat(msg.lat);
-            driverLng = parseFloat(msg.lng);
-            addDriverMarker(driverLat, driverLng);
+            var newLat = parseFloat(msg.lat);
+            var newLng = parseFloat(msg.lng);
+            var bearing = (driverLat != null && driverLng != null) ? calculateBearing(driverLat, driverLng, newLat, newLng) : 0;
+            addDriverMarker(newLat, newLng, bearing);
+            driverLat = newLat;
+            driverLng = newLng;
             if (pickupLat != null && pickupLng != null) drawRoute();
           } else if (type === 'trip_started') {
             tripStatus = 'STARTED';
@@ -203,12 +206,24 @@
 
   var DRIVER_CAR_ICON_URL = 'images/driver-car-transparent.png';
 
-  function addDriverMarker(lat, lng) {
+  /** Bearing in degrees from (lat1,lng1) to (lat2,lng2). 0 = north, 90 = east. */
+  function calculateBearing(lat1, lng1, lat2, lng2) {
+    var dLon = (lng2 - lng1) * Math.PI / 180;
+    var lat1Rad = lat1 * Math.PI / 180;
+    var lat2Rad = lat2 * Math.PI / 180;
+    var y = Math.sin(dLon) * Math.cos(lat2Rad);
+    var x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+    var brng = Math.atan2(y, x) * 180 / Math.PI;
+    return (brng + 360) % 360;
+  }
+
+  function addDriverMarker(lat, lng, bearingDeg) {
     if (driverMarker && map) map.removeLayer(driverMarker);
+    var deg = (bearingDeg != null && !isNaN(bearingDeg)) ? bearingDeg : 0;
     driverMarker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'driver-marker',
-        html: '<img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/>',
+        html: '<span class="driver-car-icon-wrap" style="display:inline-block;width:64px;height:64px;transform:rotate(' + deg + 'deg)"><img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/></span>',
         iconSize: [64, 64],
         iconAnchor: [32, 32]
       })
@@ -346,9 +361,12 @@
       addPickupMarker(pickup[0], pickup[1]);
     }
     if (driver && (driver[0] !== 0 || driver[1] !== 0)) {
-      driverLat = driver[0];
-      driverLng = driver[1];
-      addDriverMarker(driver[0], driver[1]);
+      var newDriverLat = driver[0];
+      var newDriverLng = driver[1];
+      var bearing = (driverLat != null && driverLng != null) ? calculateBearing(driverLat, driverLng, newDriverLat, newDriverLng) : 0;
+      addDriverMarker(newDriverLat, newDriverLng, bearing);
+      driverLat = newDriverLat;
+      driverLng = newDriverLng;
     }
 
     if (tripStatus === 'WAITING' || tripStatus === 'STARTED') {
