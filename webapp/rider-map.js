@@ -201,7 +201,7 @@
     }).addTo(map).bindPopup('Sizning joyingiz');
   }
 
-  var DRIVER_CAR_ICON_URL = 'https://thumbs.dreamstime.com/b/modern-white-car-viewed-above-against-minimalist-geometric-background-bold-grey-lines-creating-clean-dynamic-look-top-350200377.jpg?w=768';
+  var DRIVER_CAR_ICON_URL = 'https://thumbs.dreamstime.com/b/modern-white-car-viewed-above-against-minimalist-geometric-background-bold-grey-lines-creating-clean-dynamic-look-top-350200377.jpg?w=200';
 
   function addDriverMarker(lat, lng) {
     if (driverMarker && map) map.removeLayer(driverMarker);
@@ -209,8 +209,8 @@
       icon: L.divIcon({
         className: 'driver-marker',
         html: '<img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/>',
-        iconSize: [48, 48],
-        iconAnchor: [24, 24]
+        iconSize: [44, 44],
+        iconAnchor: [22, 22]
       })
     }).addTo(map).bindPopup('Haydovchi');
   }
