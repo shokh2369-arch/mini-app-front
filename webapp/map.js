@@ -327,8 +327,8 @@
       icon: L.divIcon({
         className: 'driver-marker',
         html: '<img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/>',
-        iconSize: [44, 44],
-        iconAnchor: [22, 22]
+        iconSize: [64, 64],
+        iconAnchor: [32, 32]
       })
     }).addTo(map).bindPopup('Haydovchi');
   }
