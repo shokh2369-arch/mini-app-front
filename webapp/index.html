@@ -249,7 +249,13 @@
 
     /* Markers */
     .pickup-marker, .driver-marker { filter: drop-shadow(0 3px 10px rgba(0,0,0,0.3)); }
-    .driver-marker { font-size: 32px !important; }
+    .driver-marker .driver-car-icon {
+      width: 48px;
+      height: 48px;
+      object-fit: cover;
+      border-radius: 8px;
+      display: block;
+    }
     .client-marker { z-index: 602 !important; }
     .client-marker svg { display: block; }
     /* Route highlight */

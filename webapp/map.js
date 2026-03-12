@@ -319,10 +319,17 @@
     }).addTo(map).bindPopup('Mijoz / Olib ketish joyi');
   }
 
+  var DRIVER_CAR_ICON_URL = 'https://thumbs.dreamstime.com/b/modern-white-car-viewed-above-against-minimalist-geometric-background-bold-grey-lines-creating-clean-dynamic-look-top-350200377.jpg?w=768';
+
   function addDriverMarker(lat, lng) {
     if (driverMarker) map.removeLayer(driverMarker);
     driverMarker = L.marker([lat, lng], {
-      icon: L.divIcon({ className: 'driver-marker', html: '&#128663;', iconSize: [36, 36], iconAnchor: [18, 36] })
+      icon: L.divIcon({
+        className: 'driver-marker',
+        html: '<img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/>',
+        iconSize: [48, 48],
+        iconAnchor: [24, 24]
+      })
     }).addTo(map).bindPopup('Haydovchi');
   }
 
