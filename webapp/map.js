@@ -977,6 +977,20 @@
           });
       });
     }
+
+    // Allow closing final fare popup by tapping outside the card
+    var finalFareOverlay = document.getElementById('finalFareOverlay');
+    var finalFareCard = document.getElementById('finalFareCard');
+    if (finalFareOverlay) {
+      finalFareOverlay.addEventListener('click', function () {
+        hideFinalFareCenter();
+      });
+    }
+    if (finalFareCard) {
+      finalFareCard.addEventListener('click', function (e) {
+        e.stopPropagation();
+      });
+    }
   }
 
   if (document.readyState === 'loading') {
