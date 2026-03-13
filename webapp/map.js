@@ -155,11 +155,13 @@
       });
   }
 
-  function sendDriverLocation(lat, lng) {
+  function sendDriverLocation(lat, lng, accuracy) {
+    var body = { driver_id: driverId, lat: lat, lng: lng };
+    if (accuracy != null && typeof accuracy === 'number') body.accuracy = accuracy;
     return fetch(API_BASE + '/driver/location', {
       method: 'POST',
       headers: apiHeaders(),
-      body: JSON.stringify({ driver_id: driverId, lat: lat, lng: lng })
+      body: JSON.stringify(body)
     });
   }
 
@@ -946,6 +948,18 @@
         .then(function () {
           updateFromTrip({ status: 'FINISHED' });
           refreshTrip().then(function (data) { if (data) updateFromTrip(data); }).catch(function () {});
+          // Post-finish location so backend can auto-activate driver
+          if (lastDriverLat != null && lastDriverLng != null) {
+            sendDriverLocation(lastDriverLat, lastDriverLng).catch(function () {});
+          } else if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              function (p) {
+                var acc = p.coords.accuracy;
+                sendDriverLocation(p.coords.latitude, p.coords.longitude, (acc != null && !isNaN(acc)) ? acc : undefined).catch(function () {});
+              },
+              function () {}
+            );
+          }
         })
         .catch(function () {
           btn.disabled = false;
