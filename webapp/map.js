@@ -318,12 +318,15 @@
 
   function addPickupMarker(lat, lng) {
     if (pickupMarker) map.removeLayer(pickupMarker);
+    var riderIconW = 70;
+    var riderIconH = 70;
     pickupMarker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'pickup-marker client-marker',
         html: '<img src=\"' + RIDER_ICON_URL + '\" alt=\"Mijoz\" class=\"rider-pin-icon\"/>',
-        iconSize: [70, 70],
-        iconAnchor: [35, 35]
+        iconSize: [riderIconW, riderIconH],
+        iconAnchor: [riderIconW / 2, riderIconH],
+        popupAnchor: [riderIconW / 2, 0]
       })
     }).addTo(map).bindPopup('Mijoz / Olib ketish joyi');
   }
@@ -344,12 +347,15 @@
   function addDriverMarker(lat, lng, bearingDeg) {
     if (driverMarker) map.removeLayer(driverMarker);
     var deg = (bearingDeg != null && !isNaN(bearingDeg)) ? bearingDeg : 0;
+    var carW = 76;
+    var carH = 76;
     driverMarker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'driver-marker',
-        html: '<span class="driver-car-icon-wrap" style="display:inline-block;width:76px;height:76px;transform:rotate(' + deg + 'deg)"><img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/></span>',
-        iconSize: [76, 76],
-        iconAnchor: [38, 38]
+        html: '<span class="driver-car-icon-wrap" style="display:inline-block;width:' + carW + 'px;height:' + carH + 'px;transform-origin:50% 100%;transform:rotate(' + deg + 'deg)"><img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/></span>',
+        iconSize: [carW, carH],
+        iconAnchor: [carW / 2, carH],
+        popupAnchor: [carW / 2, 0]
       })
     }).addTo(map).bindPopup('Haydovchi');
   }
