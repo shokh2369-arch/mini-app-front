@@ -32,9 +32,9 @@
   var gpsHistory = [];
   var GPS_HISTORY_SIZE = 3;
 
-  var API_BASE = 'https://github.com/shohjaxonabbdullayev-jpg/taxi';
+  var API_BASE = 'https://taxi-ha7v.onrender.com';
 
-  // Backend (taxi-service-on-telegram) expects GET /ws?trip_id=xxx (and optionally &init_data= for auth).
+  // Backend expects GET /ws?trip_id=xxx (and optionally &init_data= for auth).
   function getWsUrl() {
     var base = API_BASE;
     var scheme = 'wss://';
