@@ -14,7 +14,7 @@
   var ws = null;
   var wsReconnectTimer = null;
   var isRouteLoading = false;
-  var API_BASE = 'https://github.com/shohjaxonabbdullayev-jpg/taxi';
+  var API_BASE = 'https://taxi-ha7v.onrender.com';
 
   function getWsUrl() {
     var base = API_BASE;
