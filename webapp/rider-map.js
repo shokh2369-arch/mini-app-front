@@ -14,7 +14,7 @@
   var ws = null;
   var wsReconnectTimer = null;
   var isRouteLoading = false;
-  var API_BASE = 'https://taxi-service-on-telegram.onrender.com';
+  var API_BASE = 'https://github.com/shohjaxonabbdullayev-jpg/taxi';
 
   function getWsUrl() {
     var base = API_BASE;
