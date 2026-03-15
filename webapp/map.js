@@ -535,8 +535,8 @@
     return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   }
 
-  // Same rule as backend: last two digits < 50 round down to 100, >= 50 round up to next 100
-  function roundFareForDisplay(fare) {
+  // Same rule as backend: last two digits < 50 -> round down to 100; >= 50 -> round up to next 100
+  function roundFareToBackendRule(fare) {
     if (fare == null || typeof fare !== 'number' || isNaN(fare)) return fare;
     return Math.round(fare / 100) * 100;
   }
@@ -567,8 +567,7 @@
   function updateFareDisplay(fare, distance) {
     var fareEl = document.getElementById('fareValue');
     var distanceEl = document.getElementById('fareDistance');
-    var displayFare = roundFareForDisplay(fare);
-    if (fareEl) fareEl.textContent = (displayFare != null && typeof displayFare === 'number') ? (formatNumberSoM(displayFare) + " so'm") : '—';
+    if (fareEl) fareEl.textContent = (fare != null && typeof fare === 'number') ? (formatNumberSoM(roundFareToBackendRule(fare)) + " so'm") : '—';
     if (distanceEl) distanceEl.textContent = (distance != null && typeof distance === 'number') ? (distance.toFixed(1) + ' km') : '—';
   }
 
@@ -576,8 +575,7 @@
     var overlay = document.getElementById('finalFareOverlay');
     var amountEl = document.getElementById('finalFareAmount');
     var distanceEl = document.getElementById('finalFareDistance');
-    var displayFare = roundFareForDisplay(fare);
-    if (amountEl) amountEl.textContent = (displayFare != null && typeof displayFare === 'number') ? (formatNumberSoM(displayFare) + " so'm") : '—';
+    if (amountEl) amountEl.textContent = (fare != null && typeof fare === 'number') ? (formatNumberSoM(roundFareToBackendRule(fare)) + " so'm") : '—';
     if (distanceEl) distanceEl.textContent = (distance != null && typeof distance === 'number') ? (distance.toFixed(1) + ' km') : '';
     if (overlay) overlay.classList.add('visible');
   }
