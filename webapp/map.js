@@ -352,9 +352,9 @@
     driverMarker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'driver-marker',
-        html: '<span class="driver-car-icon-wrap" style="display:inline-block;width:' + carW + 'px;height:' + carH + 'px;transform-origin:50% 100%;transform:rotate(' + deg + 'deg)"><img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/></span>',
+        html: '<span class="driver-car-icon-wrap" style="display:inline-block;width:' + carW + 'px;height:' + carH + 'px;transform-origin:50% 50%;transform:rotate(' + deg + 'deg)"><img src="' + DRIVER_CAR_ICON_URL + '" alt="Haydovchi" class="driver-car-icon"/></span>',
         iconSize: [carW, carH],
-        iconAnchor: [carW / 2, carH],
+        iconAnchor: [carW / 2, carH / 2],
         popupAnchor: [carW / 2, 0]
       })
     }).addTo(map).bindPopup('Haydovchi');
