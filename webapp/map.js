@@ -32,7 +32,7 @@
   var gpsHistory = [];
   var GPS_HISTORY_SIZE = 3;
 
-  var API_BASE = 'https://taxi-ha7v.onrender.com';
+  var API_BASE = 'https://taxi-h31j.onrender.com';
 
   // Backend expects GET /ws?trip_id=xxx (and optionally &init_data= for auth).
   function getWsUrl() {
