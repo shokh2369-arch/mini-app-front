@@ -31,6 +31,10 @@
   var GPS_ACCURACY_MAX_METERS = 50;
   var gpsHistory = [];
   var GPS_HISTORY_SIZE = 3;
+  /** WAITING-only: driver must reach pickup before START (approx. 50–100 m; 100 m used here). */
+  var PICKUP_ARRIVAL_RADIUS_KM = 0.1;
+  /** Frontend phase while backend status is WAITING: TO_PICKUP -> ARRIVED -> (API STARTED). */
+  var driverPickupPhase = 'TO_PICKUP';
 
   var API_BASE = 'https://taxi-1-kpkh.onrender.com';
 
@@ -119,7 +123,10 @@
   function setStatusBanner() {
     var holat = 'Yuklanmoqda…';
     var dot = '🟢';
-    if (tripStatus === 'WAITING') { holat = 'Mijozga ketilyapti'; dot = '🟢'; }
+    if (tripStatus === 'WAITING') {
+      holat = driverPickupPhase === 'ARRIVED' ? 'Safarni boshlash mumkin' : 'Mijozga yo\'lda';
+      dot = '🟢';
+    }
     else if (tripStatus === 'STARTED') { holat = 'Safar boshlandi'; dot = '🟢'; }
     else if (tripStatus === 'FINISHED') { holat = 'Safar tugadi'; dot = '⚪'; }
     else if (tripStatus === 'CANCELLED' || tripStatus === 'CANCELLED_BY_DRIVER') { holat = 'Safar bekor qilindi'; dot = '🔴'; }
@@ -242,6 +249,7 @@
             if (tripStatus === 'WAITING') {
               drawRemainingPickupRoute();
               fitMapToDriverAndClient();
+              syncWaitingPickupPhaseUi();
             } else if (tripStatus === 'STARTED') {
               appendTripProgressPoint(lastDriverLat, lastDriverLng);
               maybeRefetchTripForFare();
@@ -558,6 +566,35 @@
     return R * c;
   }
 
+  function isDriverNearPickup() {
+    if (pickupLat == null || pickupLng == null || lastDriverLat == null || lastDriverLng == null) return false;
+    return haversineKm(lastDriverLat, lastDriverLng, pickupLat, pickupLng) <= PICKUP_ARRIVAL_RADIUS_KM;
+  }
+
+  /** Buttons and a11y status while WAITING; keeps START hidden until ARRIVED. */
+  function syncWaitingPickupPhaseUi() {
+    if (tripStatus !== 'WAITING') return;
+    var btnArrivedEl = document.getElementById('btnArrived');
+    var btnStartEl = document.getElementById('btnStart');
+    if (driverPickupPhase === 'TO_PICKUP') {
+      setStatus('Mijozga yo\'lda. Olib ketish joyiga boring.');
+      showButton('btnStart', false);
+      showButton('btnArrived', true);
+      showButton('btnFinish', false);
+      showButton('btnCancel', true);
+      if (btnStartEl) btnStartEl.disabled = false;
+      if (btnArrivedEl) btnArrivedEl.disabled = !isDriverNearPickup();
+    } else {
+      setStatus('Safarni boshlashingiz mumkin.');
+      showButton('btnArrived', false);
+      showButton('btnStart', true);
+      showButton('btnFinish', false);
+      showButton('btnCancel', true);
+      if (btnStartEl) btnStartEl.disabled = false;
+    }
+    setStatusBanner();
+  }
+
   function parseFareFromTrip(data) {
     if (!data || typeof data !== 'object') return { fare: null, distance: null };
     var fare = data.fare != null ? data.fare : (data.total_fare != null ? data.total_fare : (data.amount != null ? data.amount : (data.price != null ? data.price : (data.trip_fare != null ? data.trip_fare : null))));
@@ -684,6 +721,9 @@
   function updateFromTrip(data) {
     var prevStatus = tripStatus;
     tripStatus = data.status || '';
+    if (tripStatus === 'WAITING' && prevStatus !== 'WAITING') {
+      driverPickupPhase = 'TO_PICKUP';
+    }
     setStatusBanner();
 
     var pickup = parseCoords(data.pickup) || parseCoords(data.pickup_location)
@@ -734,15 +774,15 @@
       fitMapToMarkers();
     }
 
-    renderTripStats(data);
+    if (tripStatus === 'WAITING') {
+      updateFareDisplay(null, null);
+    } else {
+      renderTripStats(data);
+    }
 
     if (tripStatus === 'WAITING') {
       hideFinalFareCenter();
       setVisible('routeInfo', true);
-      setStatus('Olib ketish joyiga boring, so\'ng SAFARNI BOSHLASH ni bosing.');
-      showButton('btnStart', true);
-      showButton('btnFinish', false);
-      showButton('btnCancel', true);
       tripStartLat = null;
       routeDistanceKm = null;
       routeEtaMin = null;
@@ -756,9 +796,11 @@
       } else {
         setRouteLoading(false);
       }
+      syncWaitingPickupPhaseUi();
     } else if (tripStatus === 'STARTED') {
       hideFinalFareCenter();
       setStatus('Safar davom etmoqda. Tugagach SAFARNI TUGATISH ni bosing.');
+      showButton('btnArrived', false);
       showButton('btnStart', false);
       showButton('btnFinish', true);
       showButton('btnCancel', false);
@@ -781,6 +823,7 @@
       setStatus('Safar tugadi.');
       setRouteLoading(false);
       clearPickupRoute();
+      showButton('btnArrived', false);
       showButton('btnStart', false);
       showButton('btnFinish', false);
       showButton('btnCancel', false);
@@ -795,6 +838,7 @@
       setRouteLoading(false);
       clearPickupRoute();
       clearTripProgressLine();
+      showButton('btnArrived', false);
       showButton('btnStart', false);
       showButton('btnFinish', false);
       showButton('btnCancel', false);
@@ -852,6 +896,7 @@
         checkRouteDeviationAndRecalc(lat, lng);
         drawRemainingPickupRoute();
         fitMapToDriverAndClient();
+        syncWaitingPickupPhaseUi();
       } else if (tripStatus === 'STARTED') {
         appendTripProgressPoint(lat, lng);
         maybeRefetchTripForFare();
@@ -925,6 +970,11 @@
     }
 
     document.getElementById('btnStart').addEventListener('click', function () {
+      if (tripStatus === 'WAITING' && driverPickupPhase !== 'ARRIVED') {
+        showBannerError('Avval mijozning oldiga yetib boring va "Yetib keldim" ni bosing.');
+        setTimeout(function () { setStatusBanner(); }, 6000);
+        return;
+      }
       var btn = this;
       var prevText = btn.textContent;
       btn.disabled = true;
@@ -950,6 +1000,20 @@
           if (typeof console !== 'undefined' && console.error) console.error('Start trip failed:', err);
         });
     });
+
+    var btnArrived = document.getElementById('btnArrived');
+    if (btnArrived) {
+      btnArrived.addEventListener('click', function () {
+        if (tripStatus !== 'WAITING' || driverPickupPhase !== 'TO_PICKUP') return;
+        if (!isDriverNearPickup()) {
+          showBannerError('Yetib keldim — mijoz joyiga yaqinroq boring (~100 m).');
+          setTimeout(function () { setStatusBanner(); }, 6000);
+          return;
+        }
+        driverPickupPhase = 'ARRIVED';
+        syncWaitingPickupPhaseUi();
+      });
+    }
 
     document.getElementById('btnFinish').addEventListener('click', function () {
       var btn = this;
