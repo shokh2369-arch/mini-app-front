@@ -6,13 +6,14 @@ A **Telegram Mini App** for taxi drivers: view the trip map, navigate to the cli
 
 ## Features
 
-- **Trip map** — Driver (car) and client (person) markers; road route from driver to pickup via OSRM.
-- **In-app navigation** — "Mijozga yo'l" shows direction immediately (dashed line), then the full road route; map follows driver and client.
-- **Instant distance & ETA** — Straight-line distance and estimated time to client shown right away; exact road distance and ETA when OSRM responds.
-- **Trip flow** — "SAFARNI BOSHLASH" / "SAFARNI TUGATISH" with status messages in Uzbek.
-- **Live fare** — Base 4,000 so'm + 1,500 so'm per km from the moment the driver starts the trip; total and distance update as the driver moves.
-- **Client card** — Mijoz phone number and pickup location; "Qo'ng'iroq" opens the device dialer.
-- **Mobile-first UI** — Large buttons, sticky fare panel, status banner; works in Telegram's in-app browser.
+- **Trip map** — Driver (car) and client (person) markers; **pickup leg** uses OSRM from driver to pickup (blue polyline, separate from the green **trip progress** line after start).
+- **Pickup navigation** — While the backend status is `WAITING`, a dashed helper line and then the full road route draw automatically as the driver moves (no separate “Mijozga yo’l” button).
+- **Instant distance & ETA to pickup** — Approximate straight-line values first; road distance and ETA when OSRM responds.
+- **Pickup-then-start flow** — **Yetib keldim** (enabled when the driver is within about **100 m** of pickup) must be confirmed before **SAFARNI BOSHLASH** appears. Trip fare and progress do **not** run until the trip is actually started.
+- **Status phases** — Banner and copy follow: **Mijozga yo’lda** → **Safarni boshlash mumkin** → **Safar boshlandi** (after start), with Uzbek helper text in the accessibility status line.
+- **Trip flow** — **SAFARNI BOSHLASH** / **SAFARNI TUGATISH** / cancel; live **Narx** and **Masofa** from the backend after **STARTED** (poll + WebSocket refresh).
+- **Client card** — Mijoz phone and pickup; **Qo'ng'iroq** opens the dialer.
+- **Mobile-first UI** — Large buttons, fare panel, sticky status banner; works in Telegram’s in-app browser.
 
 ---
 
@@ -27,8 +28,8 @@ A **Telegram Mini App** for taxi drivers: view the trip map, navigate to the cli
     └── map.js             # Map init, trip state, OSRM routing, fare logic, API calls, event handlers
 ```
 
-- **index.html** — Structure and CSS for status banner, client card (Mijoz, phone, pickup, call button), map wrapper, route info (distance/ETA), fare panel, and action buttons (Mijozga yo'l, SAFARNI BOSHLASH, SAFARNI TUGATISH). Loads Leaflet and `map.js`.
-- **map.js** — Gets `trip_id` and `driver_id` from URL or Telegram `startParam`; fetches trip from backend; initializes Leaflet with CARTO tiles; draws markers and route; handles "Mijozga yo'l" (quick direction line + OSRM route), start/finish trip, live fare (Haversine), and call button (`tel:` link).
+- **index.html** — Layout and CSS for status banner, client card, map, route info (distance/ETA to pickup), fare panel, and actions: **Yetib keldim**, **SAFARNI BOSHLASH**, **SAFARNI TUGATISH**, cancel. Loads Leaflet and `map.js`.
+- **map.js** — Resolves `trip_id` / `driver_id`; fetches trip; Leaflet + OSRM for the **pickup** route while `WAITING`; frontend phases **TO_PICKUP** → **ARRIVED** (after **Yetib keldim**) before showing start; trip progress polyline and backend-driven fare only when `STARTED`. WebSocket + periodic refresh for live stats.
 
 ---
 
@@ -77,12 +78,12 @@ For the client card and **Qo'ng'iroq** (call) button to work, `GET /trip/:id` mu
 
 ## Usage (driver flow)
 
-1. **Open the Mini App** — From the bot link with `trip_id` and `driver_id`. The map loads and the trip status is shown at the top (e.g. "Holat: Mijozga ketilyapti").
-2. **Client card** — Shows Mijoz, phone number, and pickup (address or coordinates). Use **Qo'ng'iroq** to call.
-3. **Map** — Driver (car) and client (person) markers; after loading, the road route to the client may appear. Under the map: distance to client and ETA (first approximate "~X km / ~Y daqiqa", then exact when the route is ready).
-4. **Mijozga yo'l** — Tap to follow your position and the client on the map. A direction line appears immediately; the full road route is drawn when OSRM responds. Distance and ETA update.
-5. **SAFARNI BOSHLASH** — Start the trip. Fare and distance (bottom panel) start from 4,000 so'm and increase by 1,500 so'm per km as you drive.
-6. **SAFARNI TUGATISH** — End the trip. Final fare and distance remain visible.
+1. **Open the Mini App** — From the bot link with `trip_id` and `driver_id`. The status banner shows **Holat: Mijozga yo’lda** while you are driving to pickup (backend `WAITING`).
+2. **Client card** — Mijoz, phone, pickup. Use **Qo'ng'iroq** to call.
+3. **To pickup** — Map shows driver and client markers and the **pickup route** (blue). Under the map: distance and ETA **to the pickup point** (~approx first, then OSRM). **Narx / Masofa** stay **—** until the trip is started; no metered trip progress during this leg.
+4. **Yetib keldim** — When you are within about **100 m** of the pickup, this button enables. Tap it to confirm arrival. The banner switches to **Safarni boshlash mumkin** and **SAFARNI BOSHLASH** appears.
+5. **SAFARNI BOSHLASH** — Sends `POST /trip/start`. Pickup route clears; **trip** progress (green) and live **Narx / Masofa** from the backend begin.
+6. **SAFARNI TUGATISH** — Ends the trip; final fare overlay and stats from the backend.
 
 ---
 
@@ -101,13 +102,14 @@ Trip `status` values used by the app: `WAITING`, `STARTED`, `FINISHED`.
 
 ## Configuration (in `webapp/map.js`)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `API_BASE` | `'https://taxi-service-on-telegram.onrender.com'` | Backend base URL (no trailing slash). |
-| `BASE_FARE` | `4000` | Base price in so'm. |
-| `PER_KM_FARE` | `1500` | Per-kilometer price in so'm (counted from trip start). |
+| Variable | Typical / example | Description |
+|----------|-------------------|-------------|
+| `API_BASE` | Your deploy URL | Backend base URL (no trailing slash). WebSocket: `wss://<host>/ws?trip_id=...`. |
+| `PICKUP_ARRIVAL_RADIUS_KM` | `0.1` (~100 m) | Driver must be within this radius of pickup for **Yetib keldim** to enable. Use `0.05` for ~50 m. |
+| `LIVE_TRIP_POLL_INTERVAL_MS` | `3000` | How often to refetch the trip while `STARTED` for live fare/distance. |
+| `PICKUP_ROUTE_REDRAW_INTERVAL_MS` | `5000` | Throttle for OSRM redraw of the pickup route while moving. |
 
-Fare = base + (distance in km × per-km). Distance is computed from driver position updates after "SAFARNI BOSHLASH" using the Haversine formula.
+Fare and trip distance are **not** calculated in the browser for billing: they come from **`GET /trip/:id`** after the trip is **STARTED**.
 
 ---
 
