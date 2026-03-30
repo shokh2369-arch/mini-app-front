@@ -248,12 +248,12 @@
             lastDriverLng = newLng;
             if (tripStatus === 'WAITING') {
               drawRemainingPickupRoute();
-              fitMapToDriverAndClient();
+              followDriverMapView();
               syncWaitingPickupPhaseUi();
             } else if (tripStatus === 'STARTED') {
               appendTripProgressPoint(lastDriverLat, lastDriverLng);
               maybeRefetchTripForFare();
-              fitMapToDriver();
+              followDriverMapView();
             }
           } else if (type === 'trip_started') {
             refreshTrip().catch(function () { updateFromTrip({ status: 'STARTED' }); });
@@ -386,9 +386,28 @@
     }
   }
 
-  function fitMapToDriver() {
-    if (!map || tripStatus !== 'STARTED' || lastDriverLat == null || lastDriverLng == null) return;
-    map.setView([lastDriverLat, lastDriverLng], map.getZoom(), { animate: true, duration: 0.5 });
+  /**
+   * On each location change: keep the driver centered using panTo (zoom unchanged).
+   * If the driver is outside the current map bounds (user panned/zoomed away), recover:
+   * WAITING — fit driver + pickup (may change zoom); STARTED — re-center driver at same zoom.
+   */
+  function followDriverMapView() {
+    if (!map || lastDriverLat == null || lastDriverLng == null) return;
+    var ll = L.latLng(lastDriverLat, lastDriverLng);
+    var z = map.getZoom();
+    var visible = map.getBounds().contains(ll);
+    if (!visible) {
+      if (tripStatus === 'WAITING' && pickupLat != null && pickupLng != null) {
+        map.fitBounds(L.latLngBounds([ll, L.latLng(pickupLat, pickupLng)]), {
+          padding: [80, 40, 80, 40],
+          maxZoom: 16
+        });
+      } else {
+        map.setView(ll, z, { animate: true, duration: 0.35 });
+      }
+      return;
+    }
+    map.panTo(ll, { animate: true, duration: 0.22 });
   }
 
   function drawPickupHelperLine() {
@@ -497,7 +516,7 @@
           routeEtaMin = route.duration / 60.0;
           setText('routeDistance', formatKm(routeDistanceKm));
           setText('routeEta', formatEtaMin(routeEtaMin));
-          fitMapToDriverAndClient();
+          followDriverMapView();
         }
       }
       setRouteLoading(false);
@@ -895,12 +914,12 @@
       if (tripStatus === 'WAITING') {
         checkRouteDeviationAndRecalc(lat, lng);
         drawRemainingPickupRoute();
-        fitMapToDriverAndClient();
+        followDriverMapView();
         syncWaitingPickupPhaseUi();
       } else if (tripStatus === 'STARTED') {
         appendTripProgressPoint(lat, lng);
         maybeRefetchTripForFare();
-        fitMapToDriver();
+        followDriverMapView();
       }
     }
     function onErr() {}
