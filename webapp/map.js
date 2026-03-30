@@ -191,6 +191,28 @@
     });
   }
 
+  // Called when driver confirms pickup arrival (frontend-only gating before START).
+  // Backend contract requested by you:
+  //   POST /trip/arrived
+  //   Body: { "trip_id": "<tripId>" }
+  function arrivedTrip() {
+    return fetch(API_BASE + '/trip/arrived', {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({ trip_id: String(tripId) })
+    }).then(function (r) {
+      if (!r.ok) {
+        var e = new Error(r.status === 401 ? '401 Unauthorized' : 'Arrived failed');
+        e.status = r.status;
+        e.response = r;
+        throw e;
+      }
+      return r.text().then(function (text) {
+        try { return text && text.length ? JSON.parse(text) : {}; } catch (e) { return {}; }
+      });
+    });
+  }
+
   function finishTrip() {
     return fetch(API_BASE + '/trip/finish', {
       method: 'POST',
@@ -1029,8 +1051,28 @@
           setTimeout(function () { setStatusBanner(); }, 6000);
           return;
         }
-        driverPickupPhase = 'ARRIVED';
-        syncWaitingPickupPhaseUi();
+        var btn = this;
+        var prevText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '…';
+        arrivedTrip()
+          .then(function () {
+            driverPickupPhase = 'ARRIVED';
+            syncWaitingPickupPhaseUi();
+            refreshTrip().then(function (data) { if (data) updateFromTrip(data); }).catch(function () {});
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            btn.textContent = prevText;
+            var msg = (err && err.message ? err.message : '') + (err && err.status ? ' ' + err.status : '');
+            if (msg.indexOf('401') !== -1 || msg.indexOf('Unauthorized') !== -1) {
+              showBannerError('Haydovchi tasdiqlanmadi. Mini App ni Telegram orqali oching.');
+            } else {
+              showBannerError('Yetib keldim tasdiqlanmadi. Qaytadan urinib ko\'ring.');
+            }
+            setTimeout(setStatusBanner, 8000);
+            if (typeof console !== 'undefined' && console.error) console.error('Arrived trip failed:', err);
+          });
       });
     }
 
