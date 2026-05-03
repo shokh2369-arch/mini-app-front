@@ -36,7 +36,7 @@
   /** Frontend phase while backend status is WAITING: TO_PICKUP -> ARRIVED -> (API STARTED). */
   var driverPickupPhase = 'TO_PICKUP';
 
-  var API_BASE = 'https://taxi-2r2j.onrender.com';
+  var API_BASE = 'https://taxi-uksz.onrender.com';
 
   // Backend expects GET /ws?trip_id=xxx (and optionally &init_data= for auth).
   function getWsUrl() {
