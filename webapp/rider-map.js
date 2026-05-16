@@ -14,7 +14,7 @@
   var ws = null;
   var wsReconnectTimer = null;
   var isRouteLoading = false;
-  var API_BASE = 'https://taxi-uksz.onrender.com';
+  var API_BASE = 'https://taxi-1-wbv1.onrender.com';
 
   function getWsUrl() {
     var base = API_BASE;
